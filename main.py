@@ -73,14 +73,14 @@ if __name__ == "__main__":
         'exp_dir': args.exp_dir,
     }
 
-    with open(f'{args.exp_dir}/configs.json', "w") as file:
-        json.dump(configs, file, indent=4, cls=NumpyEncoder)
-
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
     os.makedirs(exp_dir, exist_ok=True)
 
     exp_dir = f"{exp_dir}/{args.baseline}_{args.fitness_type}"
+    with open(f'{exp_dir}/configs.json', "w") as file:
+        json.dump(configs, file, indent=4, cls=NumpyEncoder)
+
     exp_img_dir = f"{exp_dir}/images"
     exp_log_dir = f"{exp_dir}/logs"
 
