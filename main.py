@@ -65,7 +65,7 @@ if __name__ == "__main__":
         'prob_mutate_patch': args.prob_mutate_patch,
         'prob_mutate_location': args.prob_mutate_location,
         'attack_w': args.attack_w,
-        'recon_w': args.recon_w,
+        'recons_w': args.recons_w,
         'tournament_size': args.tournament_size,
         'terminated_condition': args.terminated_condition,
         'seed': args.seed,
