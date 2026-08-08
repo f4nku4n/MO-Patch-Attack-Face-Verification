@@ -23,11 +23,9 @@ class Fitness:
         img_copy[:, x_min:x_max, y_min:y_max] = patch
         return img_copy
 
-    def evaluate_adv(self, X):
-        adv_imgs = torch.stack([self.apply_patch_to_image(ind.patch, ind.location) for ind in X])
-        
+    def evaluate_adv(self, list_imgs):
         with torch.no_grad():
-            adv_batch = adv_imgs.cuda()
+            adv_batch = list_imgs.cuda()
             adv_features = self.model(adv_batch)
             sims = F.cosine_similarity(adv_features, self.img2_feature, dim=1)
             adv_scores = (1 - self.label) * (0.5 - sims) + self.label * (sims - 0.5)
@@ -49,7 +47,7 @@ class Fitness:
 
     def evaluate(self, X):
         # In the original repo, the below is perform two times (one for evaluate_adv and one for evaluate_psnr)
-        adv_imgs = torch.stack([self.apply_patch_to_image(ind.patch, ind.location) for ind in X])
+        adv_imgs = torch.stack([self.apply_patch_to_image(idv.patch, idv.location) for idv in X])
 
         # One query = Evaluate Adv + Evaluate PSNR
         adv_scores = self.evaluate_adv(adv_imgs)

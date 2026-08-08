@@ -10,7 +10,7 @@ from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
 from utils.evolutionary_algorithms import tournament_selection, calculating_crowding_distance
 
 class GA:
-    def __init__(self, max_iter, max_query, population, fitness, tournament_size, interval_update, crossover_type,
+    def __init__(self, max_iter, max_query, population, fitness, tournament_size=2, crossover_type='Blended',
                  terminated_condition='generation', using_rules=False):
         self.max_iter = max_iter
         self.max_query = max_query
@@ -18,7 +18,6 @@ class GA:
         self.tournament_size = tournament_size
 
         self.fitness = fitness
-        self.interval_update = interval_update
 
         self.crossover_type = crossover_type
         self.history = []
@@ -38,7 +37,8 @@ class GA:
 
     def update_history(self, X):
         for idv in X:
-            self.history.append([idv.adv_score, idv.psnr_score])
+            if idv.adv_score is not None:
+                self.history.append([idv.adv_score.item(), idv.psnr_score.item()])
 
     def solve(self):
         # TODO: Evaluate the fitness of initial population here (Using the self.fitness)
@@ -83,8 +83,8 @@ class GA:
 
             self.n_gen += 1
 
-        adv_img, adv_score, psnr_score = self.return_best(self.pop.P)
-        return adv_img, adv_score, psnr_score
+        best_patch = self.return_best(self.pop.P)
+        return best_patch
    
     @staticmethod
     def has_converged(population):
@@ -103,7 +103,7 @@ class GA:
         if not self.using_rules:
             X_new = self.tournament_selection(pool, k, n_survival)
         else:
-            X_new = self.tournament_selection(pool, k, n_survival)
+            X_new = self.tournament_selection_rules(pool, k, n_survival)
         return X_new
 
     def tournament_selection(self, pool, k, n_survival):
@@ -119,8 +119,8 @@ class GA:
 
     @staticmethod
     def isBetter(X, Y):
-        adv_1, psnr_1 = X.adv_score, X.pnsr_score
-        adv_2, psnr_2 = Y.adv_score, Y.pnsr_score
+        adv_1, psnr_1 = X.adv_score, X.psnr_score
+        adv_2, psnr_2 = Y.adv_score, Y.psnr_score
         if adv_1 >= 0 and adv_2 >= 0:
             return psnr_2 > psnr_1
         elif adv_1 < 0 and adv_2 > 0:
@@ -138,25 +138,23 @@ class GA:
                 _X = [pool[i + j] for j in range(k)]
                 best_idx = 0
                 for j in range(1, len(_X)):
-                    if self.isBetter(_X[best_idx], X[j]):
+                    if self.isBetter(_X[best_idx], _X[j]):
                         best_idx = j
                 X_new.append(_X[best_idx])
         return X_new
 
-    def return_best(self, X):
-        list_F = [idv.F for idv in X]
+    @staticmethod
+    def return_best(X):
+        list_F = [idv.F.cpu() for idv in X]
         best_idx = np.argmax(list_F)
         best_patch = X[best_idx]
-        best_adv_img = self.fitness.apply_patch_to_image(best_patch.patch, best_patch.location)
-        return best_adv_img, best_patch.adv_score, best_patch.psnr_score
+        return best_patch
 
 selector = NonDominatedSorting()
 
 class NSGAII(GA):
-    def __init__(self, max_iter, max_query, population, fitness, tournament_size,
-                 interval_update, crossover_type, terminated_condition='generation'):
-        super().__init__(max_iter, max_query, population,
-                         fitness, tournament_size, interval_update, crossover_type, terminated_condition)
+    def __init__(self, max_iter, max_query, population, fitness, crossover_type, terminated_condition='generation'):
+        super().__init__(max_iter, max_query, population, fitness, crossover_type, terminated_condition)
 
     def update_archive(self, archive, new_ind: 'Individual'):
 
