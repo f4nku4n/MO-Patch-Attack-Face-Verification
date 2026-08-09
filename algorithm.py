@@ -5,6 +5,7 @@ from tqdm import tqdm
 from copy import deepcopy
 
 from utils.evolutionary_algorithms import tournament_selection, tournament_selection_rules, RankAndCrowdingSurvival
+from utils.evolutionary_algorithms import isBetter
 
 
 class GA:
@@ -138,7 +139,10 @@ class NSGAII(GA):
 
     @staticmethod
     def return_best(X):
-        F = np.array([idv.F for idv in X])
-        best_patch = X[np.argmax(F[:, 0])]
+        idx_best = 0
+        for i in range(1, len(X)):
+            if isBetter(X[idx_best], X[i]):
+                idx_best = i
+        best_patch = X[idx_best]
         return best_patch
 

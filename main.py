@@ -159,9 +159,11 @@ if __name__ == "__main__":
         adv_score, psnr_score = best_patch.adv_score.item(), best_patch.psnr_score.item()
         success_attack = (adv_score >= 0)
         success_list.append(success_attack)
+        print(f'Image #{i + 1}/{n_tested_imgs}')
         print(f"Adv Score: {adv_score:.4f}")
         print(f"PSNR Score: {psnr_score:.4f}")
         print('Success Attack:', success_attack)
+        print('-' * 20)
 
         # Save_image
         save_image(adv_img, f"{exp_img_dir}/{i}_Success-{success_attack}_AdvScore-{adv_score:.2f}_PSNRScore-{psnr_score:.2f}.png")
@@ -177,5 +179,16 @@ if __name__ == "__main__":
             "list_adv_psnr_scores": algo.history,
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))
+
+        # Save final population (for Multi-objective Evolutionary Algorithms)
+        if args.baseline in ['NSGAII']:
+            exp_pop_dir = f"{exp_dir}/final_pop"
+            os.makedirs(exp_pop_dir, exist_ok=True)
+            pop = []
+            for idv in algo.pop.P:
+                info = {'patch': idv.patch.cpu().detach().numpy(), 'loc': idv.location,
+                        'adv_score': idv.adv_score.item(), 'psnr_score': idv.psnr_score.item()}
+                pop.append(info)
+            p.dump(pop, open(f'{exp_pop_dir}/{i}_pop.p', 'wb'))
 
     print(f"Success rate: {sum(success_list) / len(success_list)}")
