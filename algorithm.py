@@ -9,7 +9,7 @@ from utils.evolutionary_algorithms import tournament_selection, tournament_selec
 
 class GA:
     def __init__(self, max_iter, max_query, population, fitness, tournament_size=2, crossover_type='Blended',
-                 terminated_condition='generation', problem_type='maximizing', using_rules=False):
+                 terminated_condition='generation', problem_type='maximizing', early_stop=False, using_rules=False):
         self.max_iter = max_iter
         self.max_query = max_query
         self.pop = population
@@ -24,6 +24,8 @@ class GA:
         self.using_rules = using_rules
         self.problem_type = problem_type
         self.terminated_condition = terminated_condition
+
+        self.early_stop = early_stop
 
     def isTerminated(self):
         if self.terminated_condition == 'generation':
@@ -81,7 +83,7 @@ class GA:
                                         k=self.tournament_size, problem_type=self.problem_type)
 
             self.update_history(O)
-            if self.has_converged(self.pop.P):
+            if self.early_stop and self.has_converged(self.pop.P):
                 print(f"Convergence reached at generation {self.n_gen}. Terminating early.")
                 break
 
@@ -125,9 +127,9 @@ class GA:
 
 class NSGAII(GA):
     def __init__(self, max_iter, max_query, population, fitness, crossover_type,
-                 terminated_condition='generation', problem_type='minimizing'):
+                 terminated_condition='generation', problem_type='minimizing', early_stop=False):
         super().__init__(max_iter, max_query, population, fitness, -1, crossover_type, terminated_condition,
-                         problem_type)
+                         problem_type, early_stop)
         self.selector = RankAndCrowdingSurvival()
 
     def selection(self, pool, n_survival, **kwargs):

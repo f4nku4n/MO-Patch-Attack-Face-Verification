@@ -36,6 +36,8 @@ def parse_args():
     parser.add_argument('--recons_w', type=float, default=0.5, help="Weight for reconstruction fitness")
     parser.add_argument('--tournament_size', type=int, default=4, help="Tournament size for selection")
 
+    parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
+
     parser.add_argument('--terminated_condition', type=str, default='generation')
     parser.add_argument('--problem_type', type=str, default='maximizing', choices=['maximizing', 'minimizing'])
 
@@ -68,6 +70,7 @@ if __name__ == "__main__":
         'attack_w': args.attack_w,
         'recons_w': args.recons_w,
         'tournament_size': args.tournament_size,
+        'early_stop': args.early_stop,
         'terminated_condition': args.terminated_condition,
         'problem_type': args.problem_type,
         'seed': args.seed,
@@ -114,6 +117,8 @@ if __name__ == "__main__":
     success_list = []
 
     for i in range(n_tested_imgs):
+        if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
+            continue
         set_seed(random_seed)
 
         img1, img2, label = DATA[i]
@@ -136,12 +141,13 @@ if __name__ == "__main__":
             algo = GA(max_iter=args.max_iter, max_query=args.max_query,
                       population=population, fitness=fitness, tournament_size=args.tournament_size,
                       crossover_type=args.crossover_type, terminated_condition=args.terminated_condition,
-                      problem_type=args.problem_type, using_rules=using_rules)
+                      problem_type=args.problem_type, early_stop=args.early_stop, using_rules=using_rules)
 
         elif args.baseline == "NSGAII":
             algo = NSGAII(max_iter=args.max_iter, max_query=args.max_query,
                           population=population, fitness=fitness, crossover_type=args.crossover_type,
-                          terminated_condition=args.terminated_condition, problem_type=args.problem_type)
+                          terminated_condition=args.terminated_condition, problem_type=args.problem_type,
+                          early_stop=args.early_stop)
         else:
             # Give an error if the user inputs the wrong value for the 'baseline' hyperparameter
             raise ValueError
