@@ -3,7 +3,7 @@ import argparse
 import json
 import pickle as p
 
-from utils.common import set_seed, NumpyEncoder
+from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 
 from fitness import Fitness
 from algorithm import GA, NSGAII
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Save configurations
-    configs = {
+    config = {
         'baseline': args.baseline,
         'crossover_type': args.crossover_type,
         'fitness_type': args.fitness_type,
@@ -74,14 +74,22 @@ if __name__ == "__main__":
         'n_tested_imgs': args.n_tested_imgs,
         'exp_dir': args.exp_dir,
     }
-
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
-    exp_dir = f"{exp_dir}/{args.baseline}_{args.fitness_type}"
+    if args.terminated_condition == 'generation':
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}'
+    else:
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}'
     os.makedirs(exp_dir, exist_ok=True)
 
-    with open(f'{exp_dir}/configs.json', "w") as file:
-        json.dump(configs, file, indent=4, cls=NumpyEncoder)
+    continue_exp = False
+    if os.path.isfile(f'{exp_dir}/configs.json'):
+        prev_config = json.load(open(f'{exp_dir}/configs.json'))
+        continue_exp = checkSameConfigs(config, prev_config)
+
+    if not continue_exp:
+        with open(f'{exp_dir}/configs.json', "w") as file:
+            json.dump(config, file, indent=4, cls=NumpyEncoder)
 
     exp_img_dir = f"{exp_dir}/images"
     exp_log_dir = f"{exp_dir}/logs"
@@ -143,15 +151,11 @@ if __name__ == "__main__":
         adv_img = fitness.apply_patch_to_image(patch, loc)
 
         adv_score, psnr_score = best_patch.adv_score.item(), best_patch.psnr_score.item()
-        success_attack = False
-        if args.fitness_type == 'adaptive' and adv_score == 0.0:
-            success_attack = True
-        elif args.fitness_type == 'normal' and adv_score > 0:
-            success_attack = True
+        success_attack = (adv_score >= 0)
         success_list.append(success_attack)
+        print(f"Adv Score: {adv_score:.4f}")
+        print(f"PSNR Score: {psnr_score:.4f}")
         print('Success Attack:', success_attack)
-        print(f"Adv score: {adv_score:.4f}")
-        print(f"PSNR score: {psnr_score:.4f}")
 
         # Save_image
         save_image(adv_img, f"{exp_img_dir}/{i}_Success-{success_attack}_AdvScore-{adv_score:.2f}_PSNRScore-{psnr_score:.2f}.png")
