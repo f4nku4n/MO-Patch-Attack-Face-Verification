@@ -80,9 +80,9 @@ if __name__ == "__main__":
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
     if args.terminated_condition == 'generation':
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}'
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}/Seed{args.seed}'
     else:
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}'
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}/Seed{args.seed}'
     os.makedirs(exp_dir, exist_ok=True)
 
     continue_exp = False
