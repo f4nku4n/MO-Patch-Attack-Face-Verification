@@ -126,13 +126,13 @@ if __name__ == "__main__":
             using_rules = (args.baseline == 'GA_rules')
             algo = GA(max_iter=args.max_iter, max_query=args.max_query,
                       population=population, fitness=fitness, tournament_size=args.tournament_size,
-                      crossover_type=args.crossover_type, problem_type=args.problem_type,
-                      terminated_condition=args.terminated_condition, using_rules=using_rules)
+                      crossover_type=args.crossover_type, terminated_condition=args.terminated_condition,
+                      problem_type=args.problem_type, using_rules=using_rules)
 
         elif args.baseline == "NSGAII":
             algo = NSGAII(max_iter=args.max_iter, max_query=args.max_query,
                           population=population, fitness=fitness, crossover_type=args.crossover_type,
-                          problem_type=args.problem_type, terminated_condition=args.terminated_condition)
+                          terminated_condition=args.terminated_condition, problem_type=args.problem_type)
         else:
             # Give an error if the user inputs the wrong value for the 'baseline' hyperparameter
             raise ValueError

@@ -15,6 +15,30 @@ def tournament_selection(pool, k, n_survival, problem_type='maximizing'):
             X_new.append(_X[0])
     return X_new
 
+def isBetter(X, Y):
+    adv_1, psnr_1 = X.adv_score, X.psnr_score
+    adv_2, psnr_2 = Y.adv_score, Y.psnr_score
+    if adv_1 >= 0 and adv_2 >= 0:
+        return psnr_2 > psnr_1
+    elif adv_1 < 0 and adv_2 > 0:
+        return True
+    elif adv_1 < 0 and adv_2 < 0:
+        return adv_2 < adv_1
+    return False
+
+def tournament_selection_rules(pool, k, n_survival):
+    X_new = []
+    for _ in range(n_survival // (len(pool) // k)):
+        random.shuffle(pool)
+        for i in range(0, len(pool), k):
+            _X = [pool[i + j] for j in range(k)]
+            best_idx = 0
+            for j in range(1, len(_X)):
+                if isBetter(_X[best_idx], _X[j]):
+                    best_idx = j
+            X_new.append(_X[best_idx])
+    return X_new
+
 ## For Multi-Objective Optimization
 class RankAndCrowdingSurvival:
     def __init__(self):

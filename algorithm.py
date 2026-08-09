@@ -3,7 +3,7 @@ import random
 import numpy as np
 from copy import deepcopy
 
-from utils.evolutionary_algorithms import tournament_selection, RankAndCrowdingSurvival
+from utils.evolutionary_algorithms import tournament_selection, tournament_selection_rules, RankAndCrowdingSurvival
 
 class GA:
     def __init__(self, max_iter, max_query, population, fitness, tournament_size=2, crossover_type='Blended',
@@ -27,8 +27,7 @@ class GA:
         if self.terminated_condition == 'generation':
             return self.n_gen == self.max_iter
         elif self.terminated_condition == 'query':
-            # TODO: Add the terminated condition that follows the maximum number of queries, self.max_query
-            raise NotImplementedError("Chua cai dat")
+            return self.fitness.n_eval >= self.max_query
         else:
             raise ValueError
 
@@ -38,8 +37,7 @@ class GA:
                 self.history.append([idv.adv_score.item(), idv.psnr_score.item()])
 
     def solve(self):
-        # TODO: Evaluate the fitness of initial population here (Using the self.fitness)
-        # ...
+        self.fitness.evaluate(self.pop.P)
         self.update_history(self.pop.P)
 
         self.n_gen = 1
@@ -68,10 +66,9 @@ class GA:
                 O.append(offspring_2)
             PO = P + O
 
-            self.pop.P = self.selection(pool=PO, n_survival=self.pop.pop_size, k=self.tournament_size)
-            # TODO: Evaluate the fitness of offspring here (Using the self.fitness)
-            # ...
-            # self.pop.P = tournament_selection(pool=PO, k=self.tournament_size, n_survival=self.pop.pop_size)
+            self.fitness.evaluate(O)
+            self.pop.P = self.selection(pool=PO, n_survival=self.pop.pop_size,
+                                        k=self.tournament_size, problem_type=self.problem_type)
 
             self.update_history(O)
             if self.has_converged(self.pop.P):
@@ -98,46 +95,9 @@ class GA:
     def selection(self, pool, n_survival, **kwargs):
         k = kwargs['k']
         if not self.using_rules:
-            X_new = self.tournament_selection(pool, k, n_survival)
+            X_new = tournament_selection(pool, k, n_survival, problem_type=kwargs['problem_type'])
         else:
-            X_new = self.tournament_selection_rules(pool, k, n_survival)
-        return X_new
-
-    def tournament_selection(self, pool, k, n_survival):
-        self.fitness.evaluate(pool)
-        X_new = []
-        for _ in range(n_survival // (len(pool) // k)):
-            random.shuffle(pool)
-            for i in range(0, len(pool), k):
-                _X = [pool[i + j] for j in range(k)]
-                _X.sort(key=lambda x: x.F, reverse=(self.problem_type == 'maximizing'))  # reverse=True for descending
-                X_new.append(_X[0])
-        return X_new
-
-    @staticmethod
-    def isBetter(X, Y):
-        adv_1, psnr_1 = X.adv_score, X.psnr_score
-        adv_2, psnr_2 = Y.adv_score, Y.psnr_score
-        if adv_1 >= 0 and adv_2 >= 0:
-            return psnr_2 > psnr_1
-        elif adv_1 < 0 and adv_2 > 0:
-            return True
-        elif adv_1 < 0 and adv_2 < 0:
-            return adv_2 < adv_1
-        return False
-
-    def tournament_selection_rules(self, pool, k, n_survival):
-        self.fitness.evaluate(pool)
-        X_new = []
-        for _ in range(n_survival // (len(pool) // k)):
-            random.shuffle(pool)
-            for i in range(0, len(pool), k):
-                _X = [pool[i + j] for j in range(k)]
-                best_idx = 0
-                for j in range(1, len(_X)):
-                    if self.isBetter(_X[best_idx], _X[j]):
-                        best_idx = j
-                X_new.append(_X[best_idx])
+            X_new = tournament_selection_rules(pool, k, n_survival)
         return X_new
 
     @staticmethod
@@ -157,3 +117,11 @@ class NSGAII(GA):
         self.fitness.evaluate(pool)
         X_new = self.selector.do(pool, self.pop.pop_size, problem_type=self.problem_type)
         return X_new
+
+    @staticmethod
+    def return_best(pop):
+        pass
+        # list_F = [idv.F.cpu() for idv in X]
+        # best_idx = np.argmax(list_F)
+        # best_patch = X[best_idx]
+        # return best_patch

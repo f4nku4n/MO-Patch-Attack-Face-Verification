@@ -15,6 +15,8 @@ class Fitness:
         self.max_psnr, self.min_psnr = None, None
         self.max_adv, self.min_adv = None, None
 
+        self.n_eval = 0
+
         self.multi_objective = multi_objective
 
     def apply_patch_to_image(self, patch, location):
@@ -50,6 +52,8 @@ class Fitness:
         # One query = Evaluate Adv + Evaluate PSNR
         adv_scores = self.evaluate_adv(adv_imgs)
         psnr_scores = self.evaluate_psnr(adv_imgs)
+
+        self.n_eval += len(X)
 
         if self.fitness_type == "adaptive":
             adv_scores = torch.where(adv_scores > 0, torch.tensor(0.0, device=adv_scores.device), adv_scores)
