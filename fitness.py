@@ -7,7 +7,7 @@ class Fitness:
         self.img2_feature = model(img2.cuda().unsqueeze(0))
         self.model = model.eval()
         self.patch_size = patch_size
-        
+
         self.attack_w = attack_w
         self.recons_w = recons_w
         self.label = label
@@ -29,16 +29,14 @@ class Fitness:
             adv_features = self.model(adv_batch)
             sims = F.cosine_similarity(adv_features, self.img2_feature, dim=1)
             adv_scores = (1 - self.label) * (0.5 - sims) + self.label * (sims - 0.5)
-
             return adv_scores
-            
+
     def evaluate_psnr(self, list_imgs):
         mse = F.mse_loss(list_imgs, self.img1.expand_as(list_imgs), reduction='none')
-        mse = mse.view(mse.size(0), -1).mean(dim=1) 
+        mse = mse.view(mse.size(0), -1).mean(dim=1)
         psnr_scores = torch.log10(1 / (mse + 1e-8))
-        
         return psnr_scores / 10
-    
+
     def update_min_max(self, adv_scores, psnr_scores):
         self.min_psnr = torch.min(psnr_scores.min(), self.min_psnr)
         self.max_psnr = torch.max(psnr_scores.max(), self.max_psnr)

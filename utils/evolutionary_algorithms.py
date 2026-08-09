@@ -1,15 +1,65 @@
 import random
 import numpy as np
 
-def tournament_selection(pool, k, n_survival):
+from pymoo.util.randomized_argsort import randomized_argsort
+from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
+
+## For Single-Objective Optimization
+def tournament_selection(pool, k, n_survival, problem_type='maximizing'):
     X_new = []
     for _ in range(n_survival // (len(pool) // k)):
         random.shuffle(pool)
         for i in range(0, len(pool), k):
             _X = [pool[i + j] for j in range(k)]
-            _X.sort(key=lambda x: -x.F)  # Negative for maximizing
+            _X.sort(key=lambda x: x.F, reverse=(problem_type == 'maximizing'))  # reverse=True for maximizing problem
             X_new.append(_X[0])
     return X_new
+
+## For Multi-Objective Optimization
+class RankAndCrowdingSurvival:
+    def __init__(self):
+        self.name = 'Rank and Crowding Survival'
+
+    @staticmethod
+    def do(pop, n_survive, problem_type='minimizing'):
+        pop = np.array(pop)
+
+        # get the objective space values and objects
+        F = np.array([idv.F for idv in pop])
+
+        # Only supported for minimizing problem. If the problem is maximizing, multiply -1 to the fitness score
+        if problem_type == 'maximizing':
+            F = F * -1
+
+        # the final indices of surviving individuals
+        survivors = []
+
+        # do the non-dominated sorting until splitting front
+        fronts = NonDominatedSorting().do(F, n_stop_if_ranked=n_survive)
+
+        for k, front in enumerate(fronts):
+
+            # calculate the crowding distance of the front
+            crowding_of_front = calculating_crowding_distance(F[front, :])
+
+            # save rank and crowding in the individual class
+            for j, i in enumerate(front):
+                pop[i].set('rank', k)
+                pop[i].set('crowding', crowding_of_front[j])
+
+            # current front sorted by crowding distance if splitting
+            if len(survivors) + len(front) > n_survive:
+                I = randomized_argsort(crowding_of_front, order='descending', method='numpy')
+                I = I[:(n_survive - len(survivors))]
+
+            # otherwise take the whole front unsorted
+            else:
+                I = np.arange(len(front))
+
+            # extend the survivors by all or selected individuals
+            survivors.extend(front[I])
+        return pop[survivors].tolist()
+
 
 def calculating_crowding_distance(F):
     infinity = 1e+14

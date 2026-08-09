@@ -8,6 +8,7 @@ class Individual:
         """
         self.patch_size = patch_size
         self.img_shape = img_shape
+        self.patch, self.location = None, None
         self.prob_mutate_patch = prob_mutate_patch
         self.prob_mutate_location = prob_mutate_location
 
@@ -20,6 +21,14 @@ class Individual:
 
         self._random_patch()
         self._random_location()
+
+        self.add_data = {}
+
+    def set(self, key, value):
+        if key in self.__dict__:
+            self.__dict__[key] = value
+        else:
+            self.add_data[key] = value
 
     def _random_location(self):
         """

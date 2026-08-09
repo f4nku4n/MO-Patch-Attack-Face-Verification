@@ -37,6 +37,7 @@ def parse_args():
     parser.add_argument('--tournament_size', type=int, default=4, help="Tournament size for selection")
 
     parser.add_argument('--terminated_condition', type=str, default='generation')
+    parser.add_argument('--problem_type', type=str, default='maximizing', choices=['maximizing', 'minimizing'])
 
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
@@ -68,6 +69,7 @@ if __name__ == "__main__":
         'recons_w': args.recons_w,
         'tournament_size': args.tournament_size,
         'terminated_condition': args.terminated_condition,
+        'problem_type': args.problem_type,
         'seed': args.seed,
         'n_tested_imgs': args.n_tested_imgs,
         'exp_dir': args.exp_dir,
@@ -124,13 +126,13 @@ if __name__ == "__main__":
             using_rules = (args.baseline == 'GA_rules')
             algo = GA(max_iter=args.max_iter, max_query=args.max_query,
                       population=population, fitness=fitness, tournament_size=args.tournament_size,
-                      crossover_type=args.crossover_type,
+                      crossover_type=args.crossover_type, problem_type=args.problem_type,
                       terminated_condition=args.terminated_condition, using_rules=using_rules)
 
         elif args.baseline == "NSGAII":
             algo = NSGAII(max_iter=args.max_iter, max_query=args.max_query,
                           population=population, fitness=fitness, crossover_type=args.crossover_type,
-                          terminated_condition=args.terminated_condition)
+                          problem_type=args.problem_type, terminated_condition=args.terminated_condition)
         else:
             # Give an error if the user inputs the wrong value for the 'baseline' hyperparameter
             raise ValueError

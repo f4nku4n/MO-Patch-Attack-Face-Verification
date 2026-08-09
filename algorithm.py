@@ -2,16 +2,12 @@ import torch
 import random
 import numpy as np
 from copy import deepcopy
-from individual import Individual
 
-from pymoo.util.randomized_argsort import randomized_argsort
-from pymoo.util.nds.non_dominated_sorting import NonDominatedSorting
-
-from utils.evolutionary_algorithms import tournament_selection, calculating_crowding_distance
+from utils.evolutionary_algorithms import tournament_selection, RankAndCrowdingSurvival
 
 class GA:
     def __init__(self, max_iter, max_query, population, fitness, tournament_size=2, crossover_type='Blended',
-                 terminated_condition='generation', using_rules=False):
+                 terminated_condition='generation', problem_type='maximizing', using_rules=False):
         self.max_iter = max_iter
         self.max_query = max_query
         self.pop = population
@@ -24,6 +20,7 @@ class GA:
         self.n_gen = 0
 
         self.using_rules = using_rules
+        self.problem_type = problem_type
         self.terminated_condition = terminated_condition
 
     def isTerminated(self):
@@ -113,7 +110,7 @@ class GA:
             random.shuffle(pool)
             for i in range(0, len(pool), k):
                 _X = [pool[i + j] for j in range(k)]
-                _X.sort(key=lambda x: x.F, reverse=True)  # reverse=True for descending
+                _X.sort(key=lambda x: x.F, reverse=(self.problem_type == 'maximizing'))  # reverse=True for descending
                 X_new.append(_X[0])
         return X_new
 
@@ -150,70 +147,13 @@ class GA:
         best_patch = X[best_idx]
         return best_patch
 
-selector = NonDominatedSorting()
-
 class NSGAII(GA):
-    def __init__(self, max_iter, max_query, population, fitness, crossover_type, terminated_condition='generation'):
-        super().__init__(max_iter, max_query, population, fitness, crossover_type, terminated_condition)
-
-    def update_archive(self, archive, new_ind: 'Individual'):
-
-        if len(archive) == 0:
-            return [new_ind]
-        to_remove = []
-
-        for i, item in enumerate(archive):
-            dominant_status = self.is_dominant(item, new_ind)
-            if dominant_status == 1:
-                return archive
-
-            elif dominant_status == 2:
-                to_remove.append(i)
- 
-        for idx in reversed(to_remove):
-            print("POP up")
-            archive.pop(idx)
-        archive.append(new_ind)
-
-        return archive
+    def __init__(self, max_iter, max_query, population, fitness, crossover_type,
+                 terminated_condition='generation', problem_type='minimizing'):
+        super().__init__(max_iter, max_query, population, fitness, -1, crossover_type, terminated_condition, problem_type)
+        self.selector = RankAndCrowdingSurvival()
 
     def selection(self, pool, n_survival, **kwargs):
-        _, adv_scores, fsnr_scores = self.fitness.evaluate(pool)
-        adv_scores_save = []
-        psnr_scores_save = []
-
-        # selection minimize for NSGAII
-        F = np.array(torch.stack([-adv_scores, -fsnr_scores], dim=1).cpu().detach())
-        fronts = NonDominatedSorting().do(F, n_stop_if_ranked=self.pop.pop_size)
-        survivors = []
-
-        for k, front in enumerate(fronts):
-
-            # calculate the crowding distance of the front
-            crowding_of_front = calculating_crowding_distance(F[front, :])
-
-            # save rank and crowding in the individual class
-            for j, i in enumerate(front):
-                pool[i].rank = k
-                pool[i].crowding = crowding_of_front[j]
-
-            # current front sorted by crowding distance if splitting
-            if len(survivors) + len(front) > self.pop.pop_size:
-                I = randomized_argsort(crowding_of_front, order='descending', method='numpy')
-                I = I[:(self.pop.pop_size - len(survivors))]
- 
-            # otherwise take the whole front unsorted
-            else:
-                I = np.arange(len(front))
-
-            # extend the survivors by all or selected individuals
-            survivors.extend(front[I])
-            index = list(front[I])
-            adv_scores_save.append(adv_scores[index])
-            psnr_scores_save.append(fsnr_scores[index])
-
-            # adv_scores_save.append(pool[front[I]])
-            # psnr_scores_save.append(pool[front[I]])
-        
-        self.archive.append({"adv_scores_log": adv_scores_save, "psnr_scores_log": psnr_scores_save})
-        return [pool[i] for i in survivors]
+        self.fitness.evaluate(pool)
+        X_new = self.selector.do(pool, self.pop.pop_size, problem_type=self.problem_type)
+        return X_new
