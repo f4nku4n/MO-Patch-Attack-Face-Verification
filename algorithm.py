@@ -1,9 +1,11 @@
 import torch
 import random
 import numpy as np
+from tqdm import tqdm
 from copy import deepcopy
 
 from utils.evolutionary_algorithms import tournament_selection, tournament_selection_rules, RankAndCrowdingSurvival
+
 
 class GA:
     def __init__(self, max_iter, max_query, population, fitness, tournament_size=2, crossover_type='Blended',
@@ -41,7 +43,15 @@ class GA:
         self.update_history(self.pop.P)
 
         self.n_gen = 1
+        if self.terminated_condition == 'generation':
+            pbar = tqdm(total=self.max_iter, initial=self.n_gen)
+        elif self.terminated_condition == 'query':
+            pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
+        else:
+            raise ValueError()
+
         while not self.isTerminated():
+            prev_n_eval = self.fitness.n_eval
             P = deepcopy(self.pop.P)
             O = []
             # Recombination
@@ -51,7 +61,7 @@ class GA:
                 parent1, parent2 = random.sample(P, 2)
 
                 ## Crossover
-                if self.crossover_type == 'Blended':              
+                if self.crossover_type == 'Blended':
                     offspring_1, offspring_2 = parent1.crossover_blended(parent2)
                 elif self.crossover_type == 'UX':
                     offspring_1, offspring_2 = parent1.crossover_UX(parent2)
@@ -61,7 +71,7 @@ class GA:
                 ## Mutation
                 offspring_1.mutate()
                 offspring_2.mutate()
-                
+
                 O.append(offspring_1)
                 O.append(offspring_2)
             PO = P + O
@@ -76,10 +86,15 @@ class GA:
                 break
 
             self.n_gen += 1
+            if self.terminated_condition == 'generation':
+                pbar.update(1)
+            elif self.terminated_condition == 'query':
+                pbar.update(self.fitness.n_eval - prev_n_eval)
 
+            pbar.set_postfix(gen=self.n_gen, query=self.fitness.n_eval)
         best_patch = self.return_best(self.pop.P)
         return best_patch
-   
+
     @staticmethod
     def has_converged(population):
         """
@@ -107,10 +122,12 @@ class GA:
         best_patch = X[best_idx]
         return best_patch
 
+
 class NSGAII(GA):
     def __init__(self, max_iter, max_query, population, fitness, crossover_type,
                  terminated_condition='generation', problem_type='minimizing'):
-        super().__init__(max_iter, max_query, population, fitness, -1, crossover_type, terminated_condition, problem_type)
+        super().__init__(max_iter, max_query, population, fitness, -1, crossover_type, terminated_condition,
+                         problem_type)
         self.selector = RankAndCrowdingSurvival()
 
     def selection(self, pool, n_survival, **kwargs):
