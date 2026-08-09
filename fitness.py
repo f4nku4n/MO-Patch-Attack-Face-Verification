@@ -61,7 +61,7 @@ class Fitness:
         if not self.multi_objective:
             F_scores = adv_scores * self.attack_w + psnr_scores * self.recons_w
         else:
-            F_scores = [[adv_scores[i], psnr_scores[i]] for i in range(len(adv_scores))]
+            F_scores = [[adv_scores[i].cpu(), psnr_scores[i].cpu()] for i in range(len(adv_scores))]
 
         for i, idv in enumerate(X):
             idv.adv_score = adv_scores[i]

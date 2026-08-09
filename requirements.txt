@@ -1,8 +1,8 @@
 opencv-python
-pymoo
 scikit-image
 tqdm
 torch
 torchvision
 torchaudio
+pymoo==0.6.0
 

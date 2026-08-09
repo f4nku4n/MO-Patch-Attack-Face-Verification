@@ -131,14 +131,12 @@ class NSGAII(GA):
         self.selector = RankAndCrowdingSurvival()
 
     def selection(self, pool, n_survival, **kwargs):
-        self.fitness.evaluate(pool)
         X_new = self.selector.do(pool, self.pop.pop_size, problem_type=self.problem_type)
         return X_new
 
     @staticmethod
-    def return_best(pop):
-        pass
-        # list_F = [idv.F.cpu() for idv in X]
-        # best_idx = np.argmax(list_F)
-        # best_patch = X[best_idx]
-        # return best_patch
+    def return_best(X):
+        F = np.array([idv.F for idv in X])
+        best_patch = X[np.argmax(F[:, 0])]
+        return best_patch
+
