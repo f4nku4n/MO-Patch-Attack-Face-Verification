@@ -75,9 +75,9 @@ if __name__ == "__main__":
 
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
+    exp_dir = f"{exp_dir}/{args.baseline}_{args.fitness_type}"
     os.makedirs(exp_dir, exist_ok=True)
 
-    exp_dir = f"{exp_dir}/{args.baseline}_{args.fitness_type}"
     with open(f'{exp_dir}/configs.json', "w") as file:
         json.dump(configs, file, indent=4, cls=NumpyEncoder)
 
