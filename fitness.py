@@ -2,11 +2,10 @@ import torch
 import torch.nn.functional as F
 
 class Fitness:
-    def __init__(self, patch_size, img1, img2, model, label, recons_w, attack_w, fitness_type, multi_objective=False):
+    def __init__(self, img1, img2, model, label, recons_w, attack_w, fitness_type, multi_objective=False):
         self.img1 = img1.cuda()
         self.img2_feature = model(img2.cuda().unsqueeze(0))
         self.model = model.eval()
-        self.patch_size = patch_size
 
         self.attack_w = attack_w
         self.recons_w = recons_w

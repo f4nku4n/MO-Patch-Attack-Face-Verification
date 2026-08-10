@@ -129,8 +129,7 @@ if __name__ == "__main__":
                                 prob_mutate_location=args.prob_mutate_location,
                                 prob_mutate_patch=args.prob_mutate_patch)
 
-        fitness = Fitness(patch_size=args.patch_size, img1=img1_torch, img2=img2_torch,
-                          model=MODEL, label=label,
+        fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
                           recons_w=args.recons_w, attack_w=args.attack_w, fitness_type=args.fitness_type,
                           multi_objective=(args.baseline == 'NSGAII'))
 
