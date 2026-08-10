@@ -23,7 +23,7 @@ def isBetter(X, Y):
     elif adv_1 < 0 and adv_2 > 0:
         return True
     elif adv_1 < 0 and adv_2 < 0:
-        return adv_2 < adv_1
+        return adv_2 > adv_1
     return False
 
 def tournament_selection_rules(pool, k, n_survival):
