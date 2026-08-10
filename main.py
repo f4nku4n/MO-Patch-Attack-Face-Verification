@@ -1,6 +1,6 @@
 import os
-import argparse
 import json
+import argparse
 import pickle as p
 
 from utils.common import set_seed, NumpyEncoder, checkSameConfigs
@@ -170,8 +170,9 @@ if __name__ == "__main__":
 
         # Save results
         results = {
-            "patch": patch.cpu().detach().numpy(),
             "loc": loc,
+            "patch": patch.cpu().detach().numpy(),
+            "cls_img": img1_torch.cpu().detach().numpy(),
             "adv_img": adv_img.cpu().detach().numpy(),
             "success_attack": success_attack,
             "adv_score": adv_score,
