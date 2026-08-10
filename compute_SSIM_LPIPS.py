@@ -16,7 +16,6 @@ def parse_args():
 
     parser.add_argument('--pair_path', type=str, default='lfw_preprocess/pairs.txt')
     parser.add_argument('--img_dir', type=str, default='lfw_preprocess/lfw_crop_margin_5')
-    parser.add_argument('--model_dir', type=str, default='./pretrained_model')
     parser.add_argument('--mask_dir', type=str, default='./mask')
     parser.add_argument('--exp_log_dir', type=str, required=True)
     return parser.parse_args()
