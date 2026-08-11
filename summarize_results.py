@@ -60,14 +60,14 @@ if __name__ == "__main__":
     lpips_model = lpips.LPIPS(net="alex").to(device)
     lpips_model.eval()
 
-    result_ssim, result_lpips = [], []
+    success_list, psnr_list, ssim_list, lpips_list = [], [], [], []
     for i in range(n_tested_imgs):
         log_path = f'{args.exp_log_dir}/{i}.p'
 
         data = p.load(open(log_path, 'rb'))
         try:
             cls_img = data["cls_img"]
-        except:
+        except KeyError:
             cls_img, _, _ = DATA[i]
             cls_img = cls_img.resize((img_height, img_width))
             cls_img = toTensor(cls_img).cpu().detach().numpy()
@@ -76,17 +76,22 @@ if __name__ == "__main__":
         ssim_score = compute_SSIM(cls_img, adv_img)
         lpips_score = compute_LPIPS(cls_img, adv_img, lpips_model, device)
 
-        result_ssim.append(ssim_score)
-        result_lpips.append(lpips_score)
+        success_list.append(data['success_attack'])
+        psnr_list.append(data['psnr_score'])
+        ssim_list.append(ssim_score)
+        lpips_list.append(lpips_score)
 
-    mean_ssim = np.mean(result_ssim)
-    mean_lpips = np.mean(result_lpips)
+    mean_psnr = np.mean(psnr_list)
+    mean_ssim = np.mean(ssim_list)
+    mean_lpips = np.mean(lpips_list)
 
-    if len(result_ssim) > 1:
-        std_ssim = np.std(result_ssim)
-        std_lpips = np.std(result_lpips)
+    if len(psnr_list) > 0:
+        std_psnr = np.std(psnr_list)
+        std_ssim = np.std(ssim_list)
+        std_lpips = np.std(lpips_list)
     else:
-        std_ssim = 0.0
-        std_lpips = 0.0
+        std_psnr, std_ssim, std_lpips = 0.0, 0.0, 0.0
+    print(f"Success rate: {sum(success_list) / len(success_list):.4f}")
+    print(f'PSNR: {mean_psnr:.4f} ({std_psnr:.4f})')
     print(f'SSIM: {mean_ssim:.4f} ({std_ssim:.4f})')
     print(f'LPIPS: {mean_lpips:.4f} ({std_lpips:.4f})')
