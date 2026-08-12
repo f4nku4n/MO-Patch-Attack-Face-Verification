@@ -46,7 +46,6 @@ def parse_args():
                         help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
 
-    parser.add_argument('--pair_path', type=str, default='lfw_preprocess/pairs.txt')
     parser.add_argument('--img_dir', type=str, default='lfw_preprocess/lfw_crop_margin_5')
     parser.add_argument('--model_dir', type=str, default='./pretrained_model')
     parser.add_argument('--mask_dir', type=str, default='./mask')
@@ -117,7 +116,7 @@ if __name__ == "__main__":
     pair_path = './lfw_preprocess/pairs.txt'
     if victim_model_name != 'vggface':
         pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
-    DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=args.pair_path, transform=None)
+    DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
     print('Load Data - Done!')
 
     toTensor = transforms.ToTensor()
