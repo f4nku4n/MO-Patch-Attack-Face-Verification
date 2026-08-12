@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument('--problem_type', type=str, default='maximizing', choices=['maximizing', 'minimizing'])
 
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--victim_model_name', type=str, default='resnet',
+    parser.add_argument('--victim_model_name', type=str, default='vggface',
                         choices=['vggface', 'webface', 'arcface', 'cosface'],
                         help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
