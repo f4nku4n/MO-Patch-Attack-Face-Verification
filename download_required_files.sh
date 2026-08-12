@@ -16,3 +16,8 @@ wget -O pretrained_model/vggface2.pt https://github.com/timesler/facenet-pytorch
 wget -O pretrained_model/webface.pt https://github.com/timesler/facenet-pytorch/releases/download/v2.2.9/20180408-102900-casia-webface.pt
 gdown -O pretrained_model/arcface.pth 1Hmqf25ZIoVLng3wrg0CgTwzA93XQmRCc
 gdown -O pretrained_model/cosface.pth 1hlVcK4mc3kGp4FU_slRVJJD-YIcw5lNr
+
+gdown -O lfw_preprocess/100pairs_arcface.txt 1zc4lXCC1KP8cbYjkRTaNfBMn4CPP7IhN
+gdown -O lfw_preprocess/100pairs_cosface.txt 1dPZHr_rqYQPOxF3zSOA5NohSFtVDT2ow
+gdown -O lfw_preprocess/100pairs_vggface.txt 1b60R8r41MD6KfHcqiUB5oNuJcH2y97cJ
+gdown -O lfw_preprocess/100pairs_webface.txt 1rIEauSlTxwwIbA-tfvIWMabRTMcILqxE

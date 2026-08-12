@@ -3,8 +3,6 @@ import json
 import argparse
 import pickle as p
 
-from utils.common import set_seed, NumpyEncoder, checkSameConfigs
-
 from fitness import Fitness
 from algorithm import GA, NSGAII
 from population import Population
@@ -15,6 +13,7 @@ from factory import get_model
 from torchvision import transforms
 from torchvision.utils import save_image
 
+from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Genetic Algorithm for Image Patch Manipulation")
@@ -105,21 +104,27 @@ if __name__ == "__main__":
     os.makedirs(exp_log_dir, exist_ok=True)
 
     # Load pre-trained model for the face verification task
-    MODEL = get_model(model_name=args.victim_model_name, model_dir=args.model_dir)
+    victim_model_name = args.victim_model_name
+    if victim_model_name in ['vggface', 'webface']:
+        img_height, img_width = 160, 160
+    else:  # arcface, cosface
+        img_height, img_width = 112, 112
+    MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
     print('Load Pre-trained model - Done!')
 
     # Load data
+    n_tested_imgs = args.n_tested_imgs
+    pair_path = './lfw_preprocess/pairs.txt'
+    if victim_model_name != 'vggface':
+        pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=args.pair_path, transform=None)
     print('Load Data - Done!')
 
     toTensor = transforms.ToTensor()
 
     random_seed = args.seed
-    n_tested_imgs = args.n_tested_imgs
-    img_height, img_width = 160, 160  # 160 seem like the required shape of the pre-trained model VGGFace
 
     success_list = []
-
     for i in range(n_tested_imgs):
         if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
             continue

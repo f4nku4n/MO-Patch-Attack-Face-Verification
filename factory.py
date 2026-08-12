@@ -4,7 +4,6 @@ from torch.nn import functional as F
 import torch.utils.model_zoo as modelzoo
 from torch.utils.checkpoint import checkpoint
 
-__all__ = ['iresnet18', 'iresnet34', 'iresnet50', 'iresnet100', 'iresnet200']
 using_ckpt = False
 resnet18_url = 'https://download.pytorch.org/models/resnet18-5c106cde.pth'
 
