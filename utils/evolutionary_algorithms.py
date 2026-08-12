@@ -20,7 +20,7 @@ def isBetter(X, Y):
     adv_2, psnr_2 = Y.adv_score, Y.psnr_score
     if adv_1 >= 0 and adv_2 >= 0:
         return psnr_2 > psnr_1
-    elif adv_1 < 0 and adv_2 > 0:
+    elif adv_1 < 0 and adv_2 >= 0:
         return True
     elif adv_1 < 0 and adv_2 < 0:
         return adv_2 > adv_1
