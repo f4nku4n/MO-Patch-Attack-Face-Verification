@@ -2,22 +2,29 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import torch.utils.model_zoo as modelzoo
+from torch.utils.checkpoint import checkpoint
 
+using_ckpt = False
 resnet18_url = 'https://download.pytorch.org/models/resnet18-5c106cde.pth'
 
+
 def get_model(model_name, model_dir):
-    if model_name == "resnet_vggface":
+    if model_name == "vggface":
         model = InceptionResnetV1("vggface2")
         cp_pack = f"{model_dir}/vggface2.pt"
-    elif model_name == "resnet_webface":
+
+    elif model_name == "webface":
         model = InceptionResnetV1("casia-webface")
         cp_pack = f"{model_dir}/webface.pt"
-    elif model_name == "resnet_vggface_student":
-        model = torch.load(f"{model_dir}/resnet_vggface_distill.pth")
-        return model
-    elif model_name == "bisenet":
-        model = BiSeNet(n_classes=19)
-        cp_pack = f"{model_dir}/bisenet.pth"
+
+    elif model_name == "arcface":
+        model = iresnet100()
+        cp_pack = f"{model_dir}/arcface.pth"
+
+    elif model_name == "cosface":
+        model = iresnet100()
+        cp_pack = f"{model_dir}/cosface.pth"
+
     else:
         raise ValueError()
     torch_pack = torch.load(cp_pack)
@@ -32,11 +39,11 @@ class BasicConv2d(nn.Module):
             in_planes, out_planes,
             kernel_size=kernel_size, stride=stride,
             padding=padding, bias=False
-        ) # verify bias false
+        )  # verify bias false
         self.bn = nn.BatchNorm2d(
             out_planes,
-            eps=0.001, # value found in tensorflow
-            momentum=0.1, # default pytorch value
+            eps=0.001,  # value found in tensorflow
+            momentum=0.1,  # default pytorch value
             affine=True
         )
         self.relu = nn.ReLU(inplace=False)
@@ -93,8 +100,8 @@ class Block17(nn.Module):
 
         self.branch1 = nn.Sequential(
             BasicConv2d(896, 128, kernel_size=1, stride=1),
-            BasicConv2d(128, 128, kernel_size=(1,7), stride=1, padding=(0,3)),
-            BasicConv2d(128, 128, kernel_size=(7,1), stride=1, padding=(3,0))
+            BasicConv2d(128, 128, kernel_size=(1, 7), stride=1, padding=(0, 3)),
+            BasicConv2d(128, 128, kernel_size=(7, 1), stride=1, padding=(3, 0))
         )
 
         self.conv2d = nn.Conv2d(256, 896, kernel_size=1, stride=1)
@@ -214,11 +221,12 @@ class InceptionResnetV1(nn.Module):
             initialized. (default: {None})
         dropout_prob {float} -- Dropout probability. (default: {0.6})
     """
-    def __init__(self, 
-                 pretrained=None, 
-                 classify=False, 
-                 num_classes=None, 
-                 dropout_prob=0.6, 
+
+    def __init__(self,
+                 pretrained=None,
+                 classify=False,
+                 num_classes=None,
+                 dropout_prob=0.6,
                  device=None):
         super().__init__()
 
@@ -233,7 +241,6 @@ class InceptionResnetV1(nn.Module):
             tmp_classes = 10575
         elif pretrained is None and self.classify and self.num_classes is None:
             raise Exception('If "pretrained" is not specified and "classify" is True, "num_classes" must be specified')
-
 
         # Define layers
         self.conv2d_1a = BasicConv2d(3, 32, kernel_size=3, stride=2)
@@ -279,8 +286,6 @@ class InceptionResnetV1(nn.Module):
 
         self.logits = nn.Linear(512, tmp_classes)
 
-
-
     def forward(self, x):
         """Calculate embeddings or logits given a batch of input image tensors.
 
@@ -313,6 +318,7 @@ class InceptionResnetV1(nn.Module):
             x = F.normalize(x, p=2, dim=1)
         return x
 
+
 # //////////////////////////////////////////////////////////
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -334,7 +340,7 @@ class BasicBlock(nn.Module):
                 nn.Conv2d(in_chan, out_chan,
                           kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(out_chan),
-                )
+            )
 
     def forward(self, x):
         residual = self.conv1(x)
@@ -353,7 +359,7 @@ class BasicBlock(nn.Module):
 
 def create_layer_basic(in_chan, out_chan, bnum, stride=1):
     layers = [BasicBlock(in_chan, out_chan, stride=stride)]
-    for i in range(bnum-1):
+    for i in range(bnum - 1):
         layers.append(BasicBlock(out_chan, out_chan, stride=1))
     return nn.Sequential(*layers)
 
@@ -377,9 +383,9 @@ class Resnet18(nn.Module):
         x = self.maxpool(x)
 
         x = self.layer1(x)
-        feat8 = self.layer2(x) # 1/8
-        feat16 = self.layer3(feat8) # 1/16
-        feat32 = self.layer4(feat16) # 1/32
+        feat8 = self.layer2(x)  # 1/8
+        feat16 = self.layer3(feat8)  # 1/16
+        feat32 = self.layer4(feat16)  # 1/32
         return feat8, feat16, feat32
 
     def init_weight(self):
@@ -397,9 +403,10 @@ class Resnet18(nn.Module):
                 wd_params.append(module.weight)
                 if not module.bias is None:
                     nowd_params.append(module.bias)
-            elif isinstance(module,  nn.BatchNorm2d):
+            elif isinstance(module, nn.BatchNorm2d):
                 nowd_params += list(module.parameters())
         return wd_params, nowd_params
+
 
 # /////////////////////////////////////////////
 
@@ -407,11 +414,11 @@ class ConvBNReLU(nn.Module):
     def __init__(self, in_chan, out_chan, ks=3, stride=1, padding=1, *args, **kwargs):
         super(ConvBNReLU, self).__init__()
         self.conv = nn.Conv2d(in_chan,
-                out_chan,
-                kernel_size = ks,
-                stride = stride,
-                padding = padding,
-                bias = False)
+                              out_chan,
+                              kernel_size=ks,
+                              stride=stride,
+                              padding=padding,
+                              bias=False)
         self.bn = nn.BatchNorm2d(out_chan)
         self.init_weight()
 
@@ -425,6 +432,7 @@ class ConvBNReLU(nn.Module):
             if isinstance(ly, nn.Conv2d):
                 nn.init.kaiming_normal_(ly.weight, a=1)
                 if not ly.bias is None: nn.init.constant_(ly.bias, 0)
+
 
 class BiSeNetOutput(nn.Module):
     def __init__(self, in_chan, mid_chan, n_classes, *args, **kwargs):
@@ -460,7 +468,7 @@ class AttentionRefinementModule(nn.Module):
     def __init__(self, in_chan, out_chan, *args, **kwargs):
         super(AttentionRefinementModule, self).__init__()
         self.conv = ConvBNReLU(in_chan, out_chan, ks=3, stride=1, padding=1)
-        self.conv_atten = nn.Conv2d(out_chan, out_chan, kernel_size= 1, bias=False)
+        self.conv_atten = nn.Conv2d(out_chan, out_chan, kernel_size=1, bias=False)
         self.bn_atten = nn.BatchNorm2d(out_chan)
         self.sigmoid_atten = nn.Sigmoid()
         self.init_weight()
@@ -574,17 +582,17 @@ class FeatureFusionModule(nn.Module):
         super(FeatureFusionModule, self).__init__()
         self.convblk = ConvBNReLU(in_chan, out_chan, ks=1, stride=1, padding=0)
         self.conv1 = nn.Conv2d(out_chan,
-                out_chan//4,
-                kernel_size = 1,
-                stride = 1,
-                padding = 0,
-                bias = False)
-        self.conv2 = nn.Conv2d(out_chan//4,
-                out_chan,
-                kernel_size = 1,
-                stride = 1,
-                padding = 0,
-                bias = False)
+                               out_chan // 4,
+                               kernel_size=1,
+                               stride=1,
+                               padding=0,
+                               bias=False)
+        self.conv2 = nn.Conv2d(out_chan // 4,
+                               out_chan,
+                               kernel_size=1,
+                               stride=1,
+                               padding=0,
+                               bias=False)
         self.relu = nn.ReLU(inplace=True)
         self.sigmoid = nn.Sigmoid()
         self.init_weight()
@@ -664,5 +672,195 @@ class BiSeNet(nn.Module):
         return wd_params, nowd_params, lr_mul_wd_params, lr_mul_nowd_params
 
 
-# a = get_FR_model("restnet_vggface")
-# square(cube(cos2(x515))) * ((((square(cos2(0.006122979431996305)) - (x515 * (x1045 - x1335))) - cube(-0.2016311721176652)) * (cos2(x865 - cube(0.8520368353390283)) * cube(-0.2591312104341245))) * ((x1045 - (x515 * x1045)) - (square(x515 - (x1335 / cos2(cos2(-0.648274672451553)))) * (cube(cube(cos2(x515))) + 0.7975195909481154))))
+def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes,
+                     out_planes,
+                     kernel_size=3,
+                     stride=stride,
+                     padding=dilation,
+                     groups=groups,
+                     bias=False,
+                     dilation=dilation)
+
+
+def conv1x1(in_planes, out_planes, stride=1):
+    """1x1 convolution"""
+    return nn.Conv2d(in_planes,
+                     out_planes,
+                     kernel_size=1,
+                     stride=stride,
+                     bias=False)
+
+
+class IBasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None,
+                 groups=1, base_width=64, dilation=1):
+        super(IBasicBlock, self).__init__()
+        if groups != 1 or base_width != 64:
+            raise ValueError('BasicBlock only supports groups=1 and base_width=64')
+        if dilation > 1:
+            raise NotImplementedError("Dilation > 1 not supported in BasicBlock")
+        self.bn1 = nn.BatchNorm2d(inplanes, eps=1e-05, )
+        self.conv1 = conv3x3(inplanes, planes)
+        self.bn2 = nn.BatchNorm2d(planes, eps=1e-05, )
+        self.prelu = nn.PReLU(planes)
+        self.conv2 = conv3x3(planes, planes, stride)
+        self.bn3 = nn.BatchNorm2d(planes, eps=1e-05, )
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward_impl(self, x):
+        identity = x
+        out = self.bn1(x)
+        out = self.conv1(out)
+        out = self.bn2(out)
+        out = self.prelu(out)
+        out = self.conv2(out)
+        out = self.bn3(out)
+        if self.downsample is not None:
+            identity = self.downsample(x)
+        out += identity
+        return out
+
+    def forward(self, x):
+        if self.training and using_ckpt:
+            return checkpoint(self.forward_impl, x)
+        else:
+            return self.forward_impl(x)
+
+
+class IResNet(nn.Module):
+    fc_scale = 7 * 7
+
+    def __init__(self,
+                 block, layers, dropout=0, num_features=512, zero_init_residual=False,
+                 groups=1, width_per_group=64, replace_stride_with_dilation=None, fp16=False):
+        super(IResNet, self).__init__()
+        self.extra_gflops = 0.0
+        self.fp16 = fp16
+        self.inplanes = 64
+        self.dilation = 1
+        if replace_stride_with_dilation is None:
+            replace_stride_with_dilation = [False, False, False]
+        if len(replace_stride_with_dilation) != 3:
+            raise ValueError("replace_stride_with_dilation should be None "
+                             "or a 3-element tuple, got {}".format(replace_stride_with_dilation))
+        self.groups = groups
+        self.base_width = width_per_group
+        self.conv1 = nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(self.inplanes, eps=1e-05)
+        self.prelu = nn.PReLU(self.inplanes)
+        self.layer1 = self._make_layer(block, 64, layers[0], stride=2)
+        self.layer2 = self._make_layer(block,
+                                       128,
+                                       layers[1],
+                                       stride=2,
+                                       dilate=replace_stride_with_dilation[0])
+        self.layer3 = self._make_layer(block,
+                                       256,
+                                       layers[2],
+                                       stride=2,
+                                       dilate=replace_stride_with_dilation[1])
+        self.layer4 = self._make_layer(block,
+                                       512,
+                                       layers[3],
+                                       stride=2,
+                                       dilate=replace_stride_with_dilation[2])
+        self.bn2 = nn.BatchNorm2d(512 * block.expansion, eps=1e-05, )
+        self.dropout = nn.Dropout(p=dropout, inplace=True)
+        self.fc = nn.Linear(512 * block.expansion * self.fc_scale, num_features)
+        self.features = nn.BatchNorm1d(num_features, eps=1e-05)
+        nn.init.constant_(self.features.weight, 1.0)
+        self.features.weight.requires_grad = False
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.normal_(m.weight, 0, 0.1)
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+        if zero_init_residual:
+            for m in self.modules():
+                if isinstance(m, IBasicBlock):
+                    nn.init.constant_(m.bn2.weight, 0)
+
+    def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
+        downsample = None
+        previous_dilation = self.dilation
+        if dilate:
+            self.dilation *= stride
+            stride = 1
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                conv1x1(self.inplanes, planes * block.expansion, stride),
+                nn.BatchNorm2d(planes * block.expansion, eps=1e-05, ),
+            )
+        layers = []
+        layers.append(
+            block(self.inplanes, planes, stride, downsample, self.groups,
+                  self.base_width, previous_dilation))
+        self.inplanes = planes * block.expansion
+        for _ in range(1, blocks):
+            layers.append(
+                block(self.inplanes,
+                      planes,
+                      groups=self.groups,
+                      base_width=self.base_width,
+                      dilation=self.dilation))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # normalize
+        x = (x - 0.5) / 0.5
+
+        with torch.cuda.amp.autocast(self.fp16):
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.prelu(x)
+            x = self.layer1(x)
+            x = self.layer2(x)
+            x = self.layer3(x)
+            x = self.layer4(x)
+            x = self.bn2(x)
+            x = torch.flatten(x, 1)
+            x = self.dropout(x)
+        x = self.fc(x.float() if self.fp16 else x)
+        x = self.features(x)
+        return x
+
+
+def _iresnet(arch, block, layers, pretrained, progress, **kwargs):
+    model = IResNet(block, layers, **kwargs)
+    if pretrained:
+        raise ValueError()
+    return model
+
+
+def iresnet18(pretrained=False, progress=True, **kwargs):
+    return _iresnet('iresnet18', IBasicBlock, [2, 2, 2, 2], pretrained,
+                    progress, **kwargs)
+
+
+def iresnet34(pretrained=False, progress=True, **kwargs):
+    return _iresnet('iresnet34', IBasicBlock, [3, 4, 6, 3], pretrained,
+                    progress, **kwargs)
+
+
+def iresnet50(pretrained=False, progress=True, **kwargs):
+    return _iresnet('iresnet50', IBasicBlock, [3, 4, 14, 3], pretrained,
+                    progress, **kwargs)
+
+
+def iresnet100(pretrained=False, progress=True, **kwargs):
+    return _iresnet('iresnet100', IBasicBlock, [3, 13, 30, 3], pretrained,
+                    progress, **kwargs)
+
+
+def iresnet200(pretrained=False, progress=True, **kwargs):
+    return _iresnet('iresnet200', IBasicBlock, [6, 26, 60, 6], pretrained,
+                    progress, **kwargs)

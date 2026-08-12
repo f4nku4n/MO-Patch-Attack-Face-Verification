@@ -3,8 +3,6 @@ import json
 import argparse
 import pickle as p
 
-from utils.common import set_seed, NumpyEncoder, checkSameConfigs
-
 from fitness import Fitness
 from algorithm import GA, NSGAII
 from population import Population
@@ -15,6 +13,7 @@ from factory import get_model
 from torchvision import transforms
 from torchvision.utils import save_image
 
+from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Genetic Algorithm for Image Patch Manipulation")
@@ -42,6 +41,9 @@ def parse_args():
     parser.add_argument('--problem_type', type=str, default='maximizing', choices=['maximizing', 'minimizing'])
 
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--victim_model_name', type=str, default='resnet',
+                        choices=['vggface', 'webface', 'arcface', 'cosface'],
+                        help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
 
     parser.add_argument('--pair_path', type=str, default='lfw_preprocess/pairs.txt')
@@ -75,14 +77,15 @@ if __name__ == "__main__":
         'problem_type': args.problem_type,
         'seed': args.seed,
         'n_tested_imgs': args.n_tested_imgs,
+        'victim_model': args.victim_model_name,
         'exp_dir': args.exp_dir,
     }
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
     if args.terminated_condition == 'generation':
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     else:
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     os.makedirs(exp_dir, exist_ok=True)
 
     continue_exp = False
@@ -101,21 +104,27 @@ if __name__ == "__main__":
     os.makedirs(exp_log_dir, exist_ok=True)
 
     # Load pre-trained model for the face verification task
-    MODEL = get_model(model_name="resnet_vggface", model_dir=args.model_dir)
+    victim_model_name = args.victim_model_name
+    if victim_model_name in ['vggface', 'webface']:
+        img_height, img_width = 160, 160
+    else:  # arcface, cosface
+        img_height, img_width = 112, 112
+    MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
     print('Load Pre-trained model - Done!')
 
     # Load data
+    n_tested_imgs = args.n_tested_imgs
+    pair_path = './lfw_preprocess/pairs.txt'
+    if victim_model_name != 'vggface':
+        pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=args.pair_path, transform=None)
     print('Load Data - Done!')
 
     toTensor = transforms.ToTensor()
 
     random_seed = args.seed
-    n_tested_imgs = args.n_tested_imgs
-    img_height, img_width = 160, 160  # 160 seem like the required shape of the pre-trained model VGGFace
 
     success_list = []
-
     for i in range(n_tested_imgs):
         if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
             continue
@@ -132,6 +141,9 @@ if __name__ == "__main__":
         fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
                           recons_w=args.recons_w, attack_w=args.attack_w, fitness_type=args.fitness_type,
                           multi_objective=(args.baseline == 'NSGAII'))
+        if not fitness.init_self_check():
+            print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
+            continue
 
         best_psnr_success, best_ind_success = None, None
 

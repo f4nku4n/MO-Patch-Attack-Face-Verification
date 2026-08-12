@@ -4,6 +4,7 @@ import torch.nn.functional as F
 class Fitness:
     def __init__(self, img1, img2, model, label, recons_w, attack_w, fitness_type, multi_objective=False):
         self.img1 = img1.cuda()
+        self.img1_feature = model(img1.cuda().unsqueeze(0))
         self.img2_feature = model(img2.cuda().unsqueeze(0))
         self.model = model.eval()
 
@@ -17,6 +18,12 @@ class Fitness:
         self.n_eval = 0
 
         self.multi_objective = multi_objective
+
+    def init_self_check(self):
+        with torch.no_grad():
+            sims = F.cosine_similarity(self.img1_feature, self.img2_feature, dim=1)
+            adv_scores = (1 - self.label) * (0.5 - sims) + self.label * (sims - 0.5)
+            return adv_scores.item() < 0
 
     def apply_patch_to_image(self, patch, location):
         img_copy = self.img1.clone()
