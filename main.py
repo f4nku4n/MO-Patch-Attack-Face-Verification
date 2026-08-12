@@ -42,6 +42,9 @@ def parse_args():
     parser.add_argument('--problem_type', type=str, default='maximizing', choices=['maximizing', 'minimizing'])
 
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--victim_model_name', type=str, default='resnet',
+                        choices=['vggface', 'webface', 'arcface', 'cosface'],
+                        help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
 
     parser.add_argument('--pair_path', type=str, default='lfw_preprocess/pairs.txt')
@@ -75,14 +78,15 @@ if __name__ == "__main__":
         'problem_type': args.problem_type,
         'seed': args.seed,
         'n_tested_imgs': args.n_tested_imgs,
+        'victim_model': args.victim_model_name,
         'exp_dir': args.exp_dir,
     }
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
     if args.terminated_condition == 'generation':
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     else:
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     os.makedirs(exp_dir, exist_ok=True)
 
     continue_exp = False
@@ -101,7 +105,7 @@ if __name__ == "__main__":
     os.makedirs(exp_log_dir, exist_ok=True)
 
     # Load pre-trained model for the face verification task
-    MODEL = get_model(model_name="resnet_vggface", model_dir=args.model_dir)
+    MODEL = get_model(model_name=args.victim_model_name, model_dir=args.model_dir)
     print('Load Pre-trained model - Done!')
 
     # Load data
@@ -132,6 +136,9 @@ if __name__ == "__main__":
         fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
                           recons_w=args.recons_w, attack_w=args.attack_w, fitness_type=args.fitness_type,
                           multi_objective=(args.baseline == 'NSGAII'))
+        if not fitness.init_self_check():
+            print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
+            continue
 
         best_psnr_success, best_ind_success = None, None
 

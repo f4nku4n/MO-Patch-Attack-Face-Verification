@@ -12,7 +12,7 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 def checkSameConfigs(config1, config2):
-    ignored_keys = {"exp_dir"}
+    ignored_keys = {"exp_dir", "victim_model"}
 
     c1 = {k: v for k, v in config1.items() if k not in ignored_keys}
     c2 = {k: v for k, v in config2.items() if k not in ignored_keys}
