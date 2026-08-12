@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--recons_w', type=float, default=0.5, help="Weight for reconstruction fitness")
     parser.add_argument('--tournament_size', type=int, default=4, help="Tournament size for selection")
 
+    parser.add_argument('--init_cover_all', action='store_true', help='The inital population covers all image')
     parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
 
     parser.add_argument('--terminated_condition', type=str, default='generation')
@@ -71,6 +72,7 @@ if __name__ == "__main__":
         'attack_w': args.attack_w,
         'recons_w': args.recons_w,
         'tournament_size': args.tournament_size,
+        'init_cover_all': args.init_cover_all,
         'early_stop': args.early_stop,
         'terminated_condition': args.terminated_condition,
         'problem_type': args.problem_type,
@@ -81,10 +83,13 @@ if __name__ == "__main__":
     }
     # Create folder 'exp_results'. If it is existed, pass
     exp_dir = args.exp_dir
+    baseline = args.baseline
+    if args.init_cover_all:
+        baseline += 'B'
     if args.terminated_condition == 'generation':
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxGen-{args.max_iter}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{baseline}_{args.fitness_type}_maxGen-{args.max_iter}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     else:
-        exp_dir = f'{exp_dir}/{args.baseline}_{args.fitness_type}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{baseline}_{args.fitness_type}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     os.makedirs(exp_dir, exist_ok=True)
 
     continue_exp = False
@@ -122,7 +127,6 @@ if __name__ == "__main__":
     toTensor = transforms.ToTensor()
 
     random_seed = args.seed
-
     success_list = []
     for i in range(n_tested_imgs):
         if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
@@ -135,14 +139,15 @@ if __name__ == "__main__":
 
         population = Population(pop_size=args.pop_size, patch_size=args.patch_size, img_shape=(img_height, img_width),
                                 prob_mutate_location=args.prob_mutate_location,
-                                prob_mutate_patch=args.prob_mutate_patch)
+                                prob_mutate_patch=args.prob_mutate_patch, cover_all_image=args.init_cover_all)
 
         fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
                           recons_w=args.recons_w, attack_w=args.attack_w, fitness_type=args.fitness_type,
                           multi_objective=(args.baseline == 'NSGAII'))
-        if not fitness.init_self_check():
-            print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
-            continue
+
+        # if not fitness.init_self_check():
+        #     print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
+        #     continue
 
         best_psnr_success, best_ind_success = None, None
 
