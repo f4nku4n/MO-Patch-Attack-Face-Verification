@@ -87,13 +87,13 @@ class HillClimbing:
         min_y = int(best_id[1] * self.patch_s)
         max_y = min_y + self.patch_s
         loc_best_id = (min_x, max_x, min_y, max_y)
-        print(best_id, loc_best_id, np.max(score_matrix))
+        # print(best_id, loc_best_id, np.max(score_matrix))
 
         best_idv = X[loc2idx[loc_best_id]]
         best_patch = best_idv.patch
 
         adv_score = np.max(score_matrix)
-        print('CurrentScore:', adv_score, best_idv.adv_score)
+        # print('CurrentScore:', adv_score, best_idv.adv_score)
 
         while self.fitness.n_eval < self.max_query:
             new_idv = deepcopy(best_idv)
@@ -106,7 +106,8 @@ class HillClimbing:
 
             if isBetter(best_idv, new_idv):
                 best_idv = new_idv
+                best_patch = new_patch
 
             if self.early_stop and best_idv.adv_score >= 0:
                 break
-        return best_patch
+        return best_idv

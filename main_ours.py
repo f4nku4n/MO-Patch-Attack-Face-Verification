@@ -95,6 +95,7 @@ if __name__ == "__main__":
     random_seed = args.seed
     success_list = []
     for i in range(n_tested_imgs):
+        print(f"Image #{i + 1}/{n_tested_imgs}")
         if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
             continue
         set_seed(random_seed)
@@ -128,7 +129,6 @@ if __name__ == "__main__":
             adv_score_history = np.array([F[0] for F in algo.history])
             min_query = np.where(adv_score_history >= 0)[0][0] + 1
 
-        print(f"Image #{i + 1}/{n_tested_imgs}")
         print(f"Adv Score: {adv_score:.4f}")
         print(f"PSNR Score: {psnr_score:.4f}")
         print(f"Success Attack: {success_attack}")
