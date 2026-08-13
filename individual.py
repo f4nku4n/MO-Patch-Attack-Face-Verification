@@ -2,7 +2,7 @@ import torch
 import random
 
 class Individual:
-    def __init__(self, patch_size, img_shape, prob_mutate_patch, prob_mutate_location):
+    def __init__(self, patch_size, img_shape, prob_mutate_patch=0.3, prob_mutate_location=0.5):
         """
         Initialize an individual with a random patch and location.
         """

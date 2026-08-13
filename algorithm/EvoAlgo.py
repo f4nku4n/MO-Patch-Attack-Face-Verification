@@ -4,8 +4,8 @@ import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
 
-from utils.evolutionary_algorithms import tournament_selection, tournament_selection_rules, RankAndCrowdingSurvival
 from utils.evolutionary_algorithms import isBetter
+from utils.evolutionary_algorithms import tournament_selection, tournament_selection_rules, RankAndCrowdingSurvival
 
 
 class GA:
