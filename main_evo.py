@@ -1,6 +1,7 @@
 import os
 import json
 import argparse
+import numpy as np
 import pickle as p
 
 from fitness import Fitness
@@ -174,10 +175,18 @@ if __name__ == "__main__":
         adv_score, psnr_score = best_patch.adv_score.item(), best_patch.psnr_score.item()
         success_attack = (adv_score >= 0)
         success_list.append(success_attack)
+
+        min_query = args.max_query
+        if success_attack:
+            adv_score_history = np.array([F[0] for F in algo.history])
+            min_query = np.where(adv_score_history >= 0)[0][0] + 1
+
         print(f'Image #{i + 1}/{n_tested_imgs}')
         print(f"Adv Score: {adv_score:.4f}")
         print(f"PSNR Score: {psnr_score:.4f}")
-        print('Success Attack:', success_attack)
+        print(f"Success Attack: {success_attack}")
+        print(f"Min Query: {min_query}")
+
         print('-' * 20)
 
         # Save_image
@@ -192,6 +201,7 @@ if __name__ == "__main__":
             "success_attack": success_attack,
             "adv_score": adv_score,
             "psnr_score": psnr_score,
+            "min_query": min_query,
             "list_adv_psnr_scores": algo.history,
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))

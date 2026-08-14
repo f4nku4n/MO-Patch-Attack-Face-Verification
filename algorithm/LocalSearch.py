@@ -63,22 +63,22 @@ class HillClimbing:
         new_w, cur_w = 0.1, 1.0
         best_idv = idv
         while new_w < cur_w:
-            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.loc, new_w)
+            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
             new_idv = deepcopy(idv)
             new_idv.patch = new_patch
             self.fitness.evaluate([new_idv])
-            if new_idv.adv_score >= 0 and new_idv.pnsr_score > best_idv.pnsr_score:
+            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
                 best_idv = new_idv
                 break
             new_w = round(new_w + 0.1, 1)
         cur_w = new_w
         new_w = round(cur_w - 0.1 + 0.01, 2)
         while new_w < cur_w:
-            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.loc, new_w)
+            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
             new_idv = deepcopy(idv)
             new_idv.patch = new_patch
             self.fitness.evaluate([new_idv])
-            if new_idv.adv_score >= 0 and new_idv.pnsr_score > best_idv.pnsr_score:
+            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
                 best_idv = new_idv
                 break
             new_w = round(new_w + 0.01, 2)
@@ -130,6 +130,7 @@ class HillClimbing:
 
         # while self.fitness.n_eval < self.max_query:
         max_query = self.max_query
+        found = False
         while self.fitness.n_eval < max_query:
             new_idv = deepcopy(best_idv)
             new_patch = self._add_rectangle(best_patch, self.patch_s)
@@ -139,15 +140,16 @@ class HillClimbing:
             self._log([new_idv], pbar, prev_n_eval)
             prev_n_eval = self.fitness.n_eval
 
-            if new_idv.adv_score >= 0:
-                max_query -= 20
+            if new_idv.adv_score >= 0 and not found:
+                found = True
+                max_query = self.max_query - 20
 
             # if isBetter(best_idv, new_idv):
-            if new_idv.adv_score > best_idv.adv_score:
+            if new_idv.adv_score > best_idv.adv_score:  # Focus on finding a fucking strong adversarial patch
                 best_idv = new_idv
                 best_patch = new_patch
 
             if self.early_stop and best_idv.adv_score >= 0:
                 break
-        best_idv = self._refine(best_idv)
+        best_idv = self._refine(best_idv)  # Enhance the stealth of found patch by blending it to the original content
         return best_idv
