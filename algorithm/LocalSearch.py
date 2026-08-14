@@ -129,7 +129,8 @@ class HillClimbing:
         # print('CurrentScore:', adv_score, best_idv.adv_score)
 
         # while self.fitness.n_eval < self.max_query:
-        while self.fitness.n_eval < self.max_query - 20:
+        max_query = self.max_query
+        while self.fitness.n_eval < max_query:
             new_idv = deepcopy(best_idv)
             new_patch = self._add_rectangle(best_patch, self.patch_s)
             new_idv.patch = new_patch
@@ -137,6 +138,9 @@ class HillClimbing:
             self.fitness.evaluate([new_idv])
             self._log([new_idv], pbar, prev_n_eval)
             prev_n_eval = self.fitness.n_eval
+
+            if new_idv.adv_score >= 0:
+                max_query -= 20
 
             # if isBetter(best_idv, new_idv):
             if new_idv.adv_score > best_idv.adv_score:
