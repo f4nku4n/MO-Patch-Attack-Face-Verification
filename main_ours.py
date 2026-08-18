@@ -128,6 +128,7 @@ if __name__ == "__main__":
                             n_warmup=args.n_warmup, early_stop=args.early_stop)
 
         best_patch = algo.solve()
+        algo.pbar.close()
         patch, loc = best_patch.patch, best_patch.location
         adv_img = fitness.apply_patch_to_image(patch, loc)
 
@@ -161,7 +162,7 @@ if __name__ == "__main__":
             "psnr_score": psnr_score,
             "min_query": min_query,
             "list_adv_psnr_scores": algo.history,
-            "patch_before_refining": algo.patch_before_refining.cpu().detach().numpy(),
+            "patch_before_refining": algo.patch_before_refining.patch.cpu().detach().numpy(),
             "w": algo.w
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))

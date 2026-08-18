@@ -147,8 +147,13 @@ class HillClimbing:
         list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
         for idv in list_candidates:
             idv.location = loc
-        self.fitness.evaluate([list_candidates])
-        self._log([list_candidates])
+        i, j = 0, min(1000, len(list_candidates))
+        while j != len(list_candidates):
+            self.fitness.evaluate(list_candidates[i:j])
+            i = j
+            j = min(i + 1000, len(list_candidates))
+        self.fitness.evaluate(list_candidates[i:j])
+        self._log(list_candidates)
         self.prev_n_eval = self.fitness.n_eval
 
         for idv in list_candidates:
@@ -161,8 +166,8 @@ class HillClimbing:
             list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
             for idv in list_candidates:
                 idv.location = loc
-            self.fitness.evaluate([list_candidates])
-            self._log([list_candidates])
+            self.fitness.evaluate(list_candidates)
+            self._log(list_candidates)
             self.prev_n_eval = self.fitness.n_eval
             for idv in list_candidates:
                 if isBetter(best_idv, idv):
