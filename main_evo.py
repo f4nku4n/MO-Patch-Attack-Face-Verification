@@ -4,9 +4,8 @@ import argparse
 import numpy as np
 import pickle as p
 
-from fitness import Fitness
+from core import Fitness, Population
 from algorithm import GA, NSGAII
-from population import Population
 
 from dataset import LFW
 from factory import get_model

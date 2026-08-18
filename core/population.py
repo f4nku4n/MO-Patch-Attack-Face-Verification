@@ -1,4 +1,4 @@
-from individual import Individual
+from core.individual import Individual
 
 class Population:
     def __init__(self, pop_size, patch_size, img_shape, prob_mutate_patch, prob_mutate_location, cover_all_image=False):

@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 import pickle as p
 
-from fitness import Fitness
+from core import Fitness
 from algorithm import HillClimbing
 
 from dataset import LFW

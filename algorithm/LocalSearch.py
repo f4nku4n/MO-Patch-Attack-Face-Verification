@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
 
-from individual import Individual
+from core import Individual
 from utils.evolutionary_algorithms import isBetter
 
 

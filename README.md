@@ -4,7 +4,7 @@
 1. Download Required Files
    ```cmd
    cd Multi-Objective-Face-Patch-Attack
-   bash download_required_files.sh
+   bash script/download_required_files.sh
    ``` 
 You can change the download path in download_required_files.sh if needed.
 
@@ -28,16 +28,16 @@ You can change the download path in download_required_files.sh if needed.
         ```cmd
         python main_evo.py --baseline GA_rules --fitness_type normal --seed 42 --max_query 10000 --terminated_condition query --victim_model_name webface --img_dir <LFW dataset directory> --mask_dir <mask path> --model_dir <pre-trained model directory>
         ```
-    4. Attack by using HiPA
+    4. Attack by using HiPA (our proposed method)
        ```cmd
        python main_ours.py --seed 42 --max_query 10000 --victim_model_name webface --img_dir <LFW dataset directory> --mask_dir <mask path> --model_dir <pre-trained model directory>
        ```
 # Ablation Study
-1. HiPA but randomly sampling location at step 1
+1. HiPA but randomly sampling location at Step-1
    ```cmd
    python main_ours.py --step1_random --seed 42 --max_query 10000 --victim_model_name webface --img_dir <LFW dataset directory> --mask_dir <mask path> --model_dir <pre-trained model directory>
    ```
-2. HiPA but random search at step 1
+2. HiPA but random search at Step-2
    ```cmd
    python main_ours.py --step2_random --seed 42 --max_query 10000 --victim_model_name webface --img_dir <LFW dataset directory> --mask_dir <mask path> --model_dir <pre-trained model directory>
    ```
