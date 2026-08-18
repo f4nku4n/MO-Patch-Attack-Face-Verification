@@ -145,9 +145,8 @@ if __name__ == "__main__":
                           recons_w=args.recons_w, attack_w=args.attack_w, fitness_type=args.fitness_type,
                           multi_objective=(args.baseline == 'NSGAII'))
 
-        # if not fitness.init_self_check():
-        #     print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
-        #     continue
+        if not fitness.init_self_check():
+            print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
 
         best_psnr_success, best_ind_success = None, None
 
