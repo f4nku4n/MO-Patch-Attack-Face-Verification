@@ -117,9 +117,8 @@ if __name__ == "__main__":
         fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
                           recons_w=0.0, attack_w=0.0, fitness_type=None, multi_objective=False)
 
-        # if not fitness.init_self_check():
-        #     print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
-        #     continue
+        if not fitness.init_self_check():
+            print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
 
         best_psnr_success, best_ind_success = None, None
 
