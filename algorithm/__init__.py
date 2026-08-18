@@ -1,2 +1,2 @@
-from algorithm.EvoAlgo import GA, NSGAII
-from algorithm.LocalSearch import HillClimbing
+from algorithm.evo_algo import GA, NSGAII
+from algorithm.local_search import HillClimbing
