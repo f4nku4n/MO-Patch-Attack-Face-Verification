@@ -21,6 +21,8 @@ def parse_args():
     parser.add_argument('--max_query', type=int, default=10000, help="Maximum number of evaluations")
 
     parser.add_argument('--n_warmup', type=int, default=1)
+    parser.add_argument('--step1_random', action='store_true', help='Step 1: Random Location')
+    parser.add_argument('--step2_random', action='store_true', help='Step 2: Random Search')
     parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
 
     parser.add_argument('--seed', type=int, default=42)
@@ -52,10 +54,18 @@ if __name__ == "__main__":
         'victim_model': args.victim_model_name,
         'exp_dir': args.exp_dir,
     }
-    # Create folder 'exp_results'. If it is existed, pass
+
     exp_dir = args.exp_dir
     baseline = 'HillClimbing'
-    exp_dir = f'{exp_dir}/{baseline}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
+    if not args.step1_random and not args.step2_random:
+        exp_dir = f'{exp_dir}/{baseline}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
+    else:
+        config['step1_random'] = args.step1_random
+        config['step2_random'] = args.step2_random
+
+        exp_dir = (f'{exp_dir}/{baseline}_RandomStep1-{args.step1_random}_RandomStep2-{args.step2_random}_'
+                   f'maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
+
     os.makedirs(exp_dir, exist_ok=True)
 
     continue_exp = False
@@ -114,7 +124,8 @@ if __name__ == "__main__":
         best_psnr_success, best_ind_success = None, None
 
         algo = HillClimbing(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=args.patch_size,
-                            fitness=fitness, n_warmup=args.n_warmup, early_stop=args.early_stop)
+                            fitness=fitness, step1_random=args.step1_random, step2_random=args.step2_random,
+                            n_warmup=args.n_warmup, early_stop=args.early_stop)
 
         best_patch = algo.solve()
         patch, loc = best_patch.patch, best_patch.location
@@ -143,12 +154,15 @@ if __name__ == "__main__":
             "loc": loc,
             "patch": patch.cpu().detach().numpy(),
             "cls_img": img1_torch.cpu().detach().numpy(),
+            "ref_img": img2_torch.cpu().detach().numpy(),
             "adv_img": adv_img.cpu().detach().numpy(),
             "success_attack": success_attack,
             "adv_score": adv_score,
             "psnr_score": psnr_score,
             "min_query": min_query,
             "list_adv_psnr_scores": algo.history,
+            "patch_before_refining": algo.patch_before_refining.cpu().detach().numpy(),
+            "w": algo.w
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))
 

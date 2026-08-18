@@ -9,7 +9,7 @@ from utils.evolutionary_algorithms import isBetter
 
 
 class HillClimbing:
-    def __init__(self, max_query, img_h, img_w, patch_s, fitness, n_warmup=1, early_stop=False):
+    def __init__(self, max_query, img_h, img_w, patch_s, fitness, step1_random=False, step2_random=False, n_warmup=1, early_stop=False):
         self.max_query = max_query
         self.n_warmup = n_warmup
         self.img_h, self.img_w = img_h, img_w
@@ -18,7 +18,13 @@ class HillClimbing:
         self.fitness = fitness
         self.history = []
 
+        self.step1_random, self.step2_random = step1_random, step2_random
         self.early_stop = early_stop
+        self.pbar = None
+        self.prev_n_eval = 0
+
+        self.patch_before_refining = None
+        self.w = 1.0
 
     def _get_all_locations(self):
         list_locs = []
@@ -46,10 +52,10 @@ class HillClimbing:
             if idv.adv_score is not None:
                 self.history.append([idv.adv_score.item(), idv.psnr_score.item()])
 
-    def _log(self, X, pbar, prev_n_eval):
+    def _log(self, X):
         self.update_history(X)
-        pbar.update(self.fitness.n_eval - prev_n_eval)
-        pbar.set_postfix(query=self.fitness.n_eval)
+        self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
+        self.pbar.set_postfix(query=self.fitness.n_eval)
 
     @staticmethod
     def _adjust_patch_with_weight(cls_img, patch, loc, w):
@@ -57,37 +63,8 @@ class HillClimbing:
         new_patch = ori_patch * (1 - w) + patch * w
         return new_patch
 
-    def _refine(self, idv):
-        if self.fitness.n_eval >= self.max_query:
-            return idv
-        new_w, cur_w = 0.1, 1.0
-        best_idv = idv
-        while new_w < cur_w:
-            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
-            new_idv = deepcopy(idv)
-            new_idv.patch = new_patch
-            self.fitness.evaluate([new_idv])
-            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
-                best_idv = new_idv
-                break
-            new_w = round(new_w + 0.1, 1)
-        cur_w = new_w
-        new_w = round(cur_w - 0.1 + 0.01, 2)
-        while new_w < cur_w:
-            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
-            new_idv = deepcopy(idv)
-            new_idv.patch = new_patch
-            self.fitness.evaluate([new_idv])
-            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
-                best_idv = new_idv
-                break
-            new_w = round(new_w + 0.01, 2)
-        return best_idv
-
-    def solve(self):
-        pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
-        prev_n_eval = self.fitness.n_eval
-
+    ######################################## Step-1: Promising Region Selection ########################################
+    def _promising_region_selection(self):
         list_locs = self._get_all_locations()
         results = {loc: {} for loc in list_locs}
         loc2idx = {loc: i for i, loc in enumerate(list_locs)}
@@ -98,8 +75,8 @@ class HillClimbing:
             for idv in _X:
                 idv.location = loc
             self.fitness.evaluate(_X)
-            self._log(_X, pbar, prev_n_eval)
-            prev_n_eval = self.fitness.n_eval
+            self._log(_X)
+            self.prev_n_eval = self.fitness.n_eval
 
             idx_best = 0
             for j in range(1, len(_X)):
@@ -127,8 +104,20 @@ class HillClimbing:
 
         # adv_score = np.max(score_matrix)
         # print('CurrentScore:', adv_score, best_idv.adv_score)
+        return best_idv, best_patch
 
-        # while self.fitness.n_eval < self.max_query:
+    def _random_region(self):
+        best_idv = Individual(self.patch_s, (self.img_h, self.img_w))
+        best_patch = best_idv.patch
+
+        self.fitness.evaluate([best_idv])
+        self._log([best_idv])
+
+        self.prev_n_eval = self.fitness.n_eval
+        return best_idv, best_patch
+
+    ######################################## Step-2: Patch Content Optimization ########################################
+    def _hillClimbing(self, best_idv, best_patch):
         max_query = self.max_query
         found = False
         while self.fitness.n_eval < max_query:
@@ -137,19 +126,109 @@ class HillClimbing:
             new_idv.patch = new_patch
 
             self.fitness.evaluate([new_idv])
-            self._log([new_idv], pbar, prev_n_eval)
-            prev_n_eval = self.fitness.n_eval
+            self._log([new_idv])
+            self.prev_n_eval = self.fitness.n_eval
 
             if new_idv.adv_score >= 0 and not found:
                 found = True
                 max_query = self.max_query - 20
 
-            # if isBetter(best_idv, new_idv):
             if new_idv.adv_score > best_idv.adv_score:  # Focus on finding a fucking strong adversarial patch
                 best_idv = new_idv
                 best_patch = new_patch
 
             if self.early_stop and best_idv.adv_score >= 0:
                 break
+        return best_idv
+
+    def _randomSearch(self, best_idv):
+        n_candidates = self.max_query - self.fitness.n_eval - 20
+        loc = best_idv.location
+        list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
+        for idv in list_candidates:
+            idv.location = loc
+        self.fitness.evaluate([list_candidates])
+        self._log([list_candidates])
+        self.prev_n_eval = self.fitness.n_eval
+
+        for idv in list_candidates:
+            if isBetter(best_idv, idv):
+                best_idv = idv
+
+        found = best_idv.adv_score >= 0
+        if not found:
+            n_candidates = 20
+            list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
+            for idv in list_candidates:
+                idv.location = loc
+            self.fitness.evaluate([list_candidates])
+            self._log([list_candidates])
+            self.prev_n_eval = self.fitness.n_eval
+            for idv in list_candidates:
+                if isBetter(best_idv, idv):
+                    best_idv = idv
+
+        return best_idv
+
+    ############################################ Step-3: Stealth Refinement ############################################
+    def _refine(self, idv):
+        if self.fitness.n_eval >= self.max_query:
+            return idv
+        new_w = 0.1
+        best_idv = idv
+        while new_w < self.w:
+            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
+            new_idv = deepcopy(idv)
+            new_idv.patch = new_patch
+
+            self.fitness.evaluate([new_idv])
+            self._log([new_idv])
+            self.prev_n_eval = self.fitness.n_eval
+
+            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
+                best_idv = new_idv
+                break
+            new_w = round(new_w + 0.1, 1)
+
+        self.w = new_w
+        new_w = round(self.w - 0.1 + 0.01, 2)
+        while new_w < self.w:
+            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
+            new_idv = deepcopy(idv)
+            new_idv.patch = new_patch
+
+            self.fitness.evaluate([new_idv])
+            self._log([new_idv])
+            self.prev_n_eval = self.fitness.n_eval
+
+            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
+                best_idv = new_idv
+                self.w = new_w
+                break
+            new_w = round(new_w + 0.01, 2)
+        if self.fitness.n_eval < self.max_query:
+            for _ in range(self.max_query - self.fitness.n_eval):
+                self._log([best_idv])
+
+        return best_idv
+
+    ####################################################### Main #######################################################
+    def solve(self):
+        self.pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
+        self.prev_n_eval = self.fitness.n_eval
+
+        if self.step1_random:
+            best_idv, best_patch = self._random_region()
+        else:
+            best_idv, best_patch = self._promising_region_selection()
+
+        # Step 2: Hill Climbing
+        if self.step2_random:
+            best_idv = self._randomSearch(best_idv)
+        else:
+            best_idv = self._hillClimbing(best_idv, best_patch)
+
+        # Step 3: Stealth Refinement
+        self.patch_before_refining = deepcopy(best_idv)
         best_idv = self._refine(best_idv)  # Enhance the stealth of found patch by blending it to the original content
         return best_idv
