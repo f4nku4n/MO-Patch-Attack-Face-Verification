@@ -35,6 +35,7 @@ def parse_args():
     parser.add_argument('--model_dir', type=str, default='./pretrained_model')
     parser.add_argument('--mask_dir', type=str, default='./mask')
     parser.add_argument('--exp_dir', type=str, default='./exp_results')
+    parser.add_argument('--setting', type=str, default='same', choices=['same','different'])
     return parser.parse_args()
 
 
@@ -53,6 +54,7 @@ if __name__ == "__main__":
         'n_tested_imgs': args.n_tested_imgs,
         'victim_model': args.victim_model_name,
         'exp_dir': args.exp_dir,
+        'setting': args.setting,
     }
 
     exp_dir = args.exp_dir
@@ -64,7 +66,7 @@ if __name__ == "__main__":
         config['step2_random'] = args.step2_random
 
         exp_dir = (f'{exp_dir}/{baseline}_RandomStep1-{args.step1_random}_RandomStep2-{args.step2_random}_'
-                   f'maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
+                   f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
 
     os.makedirs(exp_dir, exist_ok=True)
 
@@ -94,9 +96,9 @@ if __name__ == "__main__":
 
     # Load data
     n_tested_imgs = args.n_tested_imgs
-    pair_path = './lfw_preprocess/pairs.txt'
-    if victim_model_name != 'vggface':
-        pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
+    pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
+    # if victim_model_name != 'vggface':
+    #     pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
     print('Load Data - Done!')
 
