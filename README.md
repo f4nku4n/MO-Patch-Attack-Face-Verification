@@ -10,7 +10,7 @@ You can change the download path in download_required_files.sh if needed.
 
 2. Clone the Repository, Navigate to the Source Directory and Install the requirement packages.
     ```cmd
-    pip install -r requirements.txt
+    pip install -rzxcvbnm requirements.txt
     ``` 
 
 # Reproducing the results
