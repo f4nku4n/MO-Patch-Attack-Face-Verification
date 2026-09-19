@@ -32,7 +32,7 @@ You can change the download path in download_required_files.sh if needed.
        ```cmd
        python main_ours.py --seed 42 --max_query 10000 --victim_model_name webface --img_dir <LFW dataset directory> --mask_dir <mask path> --model_dir <pre-trained model directory>
        ```
-# Ablation Study
+# Ablation Studyy
 1. HiPA but randomly sampling location at Step-1
    ```cmd
    python main_ours.py --step1_random --seed 42 --max_query 10000 --victim_model_name webface --img_dir <LFW dataset directory> --mask_dir <mask path> --model_dir <pre-trained model directory>
