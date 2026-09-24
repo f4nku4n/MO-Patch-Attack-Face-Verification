@@ -17,12 +17,11 @@ from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--patch_size', type=int, default=20, help="Size of the patch")
     parser.add_argument('--max_query', type=int, default=10000, help="Maximum number of evaluations")
 
     parser.add_argument('--n_warmup', type=int, default=1)
-    parser.add_argument('--step1_random', action='store_true', help='Step 1: Random Location')
-    parser.add_argument('--step2_random', action='store_true', help='Step 2: Random Search')
+    parser.add_argument('--variant1', action='store_true', help='continue with the next patch if successful')
+    parser.add_argument('--variant2', action='store_true', help='stop all other patches if successful')
     parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
 
     parser.add_argument('--seed', type=int, default=42)
@@ -30,6 +29,7 @@ def parse_args():
                         choices=['vggface', 'webface', 'arcface', 'cosface'],
                         help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
+    parser.add_argument('--b', type=int, default=2)
 
     parser.add_argument('--img_dir', type=str, default='lfw_preprocess/lfw_crop_margin_5')
     parser.add_argument('--model_dir', type=str, default='./pretrained_model')
@@ -46,7 +46,6 @@ if __name__ == "__main__":
     # Save configurations
     config = {
         'method': 'Hill-Climbing',
-        'patch_size': args.patch_size,
         'max_query': args.max_query,
         'n_warmup': args.n_warmup,
         'early_stop': args.early_stop,
@@ -55,17 +54,18 @@ if __name__ == "__main__":
         'victim_model': args.victim_model_name,
         'exp_dir': args.exp_dir,
         'setting': args.setting,
+        'b': args.b,
     }
 
     exp_dir = args.exp_dir
     baseline = 'HillClimbing'
-    if not args.step1_random and not args.step2_random:
+    if not args.variant1 and not args.variant2:
         exp_dir = f'{exp_dir}/{baseline}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     else:
-        config['step1_random'] = args.step1_random
-        config['step2_random'] = args.step2_random
+        config['variant1'] = args.variant1
+        config['variant2'] = args.variant2
 
-        exp_dir = (f'{exp_dir}/{baseline}_RandomStep1-{args.step1_random}_RandomStep2-{args.step2_random}_'
+        exp_dir = (f'{exp_dir}/{baseline}_Variant1-{args.variant1}_Variant2-{args.variant2}_'
                    f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
 
     os.makedirs(exp_dir, exist_ok=True)
@@ -124,11 +124,11 @@ if __name__ == "__main__":
 
         best_psnr_success, best_ind_success = None, None
 
-        algo = HillClimbing(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=args.patch_size,
-                            fitness=fitness, step1_random=args.step1_random, step2_random=args.step2_random,
+        algo = HillClimbing(max_query=args.max_query, img_h=img_h, img_w=img_w,
+                            fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
                             n_warmup=args.n_warmup, early_stop=args.early_stop)
 
-        best_patch = algo.solve()
+        best_patch, best_patch_size, min_query = algo.solve()
         algo.pbar.close()
         patch, loc = best_patch.patch, best_patch.location
         adv_img = fitness.apply_patch_to_image(patch, loc)
@@ -137,15 +137,12 @@ if __name__ == "__main__":
         success_attack = (adv_score >= 0)
         success_list.append(success_attack)
 
-        min_query = args.max_query
-        if success_attack:
-            adv_score_history = np.array([F[0] for F in algo.history])
-            min_query = np.where(adv_score_history >= 0)[0][0] + 1
 
         print(f"Adv Score: {adv_score:.4f}")
         print(f"PSNR Score: {psnr_score:.4f}")
         print(f"Success Attack: {success_attack}")
         print(f"Min Query: {min_query}")
+        print(f"The best patch size: {best_patch_size}")
         print('-' * 20)
 
         # Save_image
@@ -164,7 +161,8 @@ if __name__ == "__main__":
             "min_query": min_query,
             "list_adv_psnr_scores": algo.history,
             "patch_before_refining": algo.patch_before_refining.patch.cpu().detach().numpy(),
-            "w": algo.w
+            "w": algo.w,
+            "best_patch_size": best_patch_size
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))
 
