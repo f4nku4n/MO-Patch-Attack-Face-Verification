@@ -58,7 +58,7 @@ if __name__ == "__main__":
     }
 
     exp_dir = args.exp_dir
-    baseline = 'HillClimbing'
+    baseline = 'HillClimbing_IMS'
     if not args.variant1 and not args.variant2:
         exp_dir = f'{exp_dir}/{baseline}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     else:
