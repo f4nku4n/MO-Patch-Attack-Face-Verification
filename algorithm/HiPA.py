@@ -221,6 +221,9 @@ class HiPA:
 
     ####################################################### Main #######################################################
     def solve(self):
+        found = False
+        min_query = self.max_query
+
         self.pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
         self.prev_n_eval = self.fitness.n_eval
 
@@ -228,6 +231,9 @@ class HiPA:
             best_idv, best_patch = self._random_region()
         else:
             best_idv, best_patch = self._promising_region_selection()
+        if best_idv.adv_score >= 0 and not found:
+            found = True
+            min_query = self.fitness.n_eval
 
         # Step 2: Hill Climbing
         if self.step2_random:
@@ -235,7 +241,12 @@ class HiPA:
         else:
             best_idv = self._hillClimbing(best_idv, best_patch)
 
+        if best_idv.adv_score >= 0 and not found:
+            min_query = self.fitness.n_eval
+
         # Step 3: Stealth Refinement
         self.patch_before_refining = deepcopy(best_idv)
         best_idv = self._refine(best_idv)  # Enhance the stealth of found patch by blending it to the original content
-        return best_idv
+        best_patch_size = best_idv.patch_size
+
+        return best_idv, best_patch_size, min_query
