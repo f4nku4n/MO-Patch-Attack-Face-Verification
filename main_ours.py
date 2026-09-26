@@ -1,11 +1,10 @@
 import os
 import json
 import argparse
-import numpy as np
 import pickle as p
 
 from core import Fitness
-from algorithm import HillClimbing
+from algorithm import HiPA, IMS_HiPA
 
 from dataset import LFW
 from factory import get_model
@@ -18,6 +17,7 @@ from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_query', type=int, default=10000, help="Maximum number of evaluations")
+    parser.add_argument('--optimizer', type=str, default='IMS-HiPA', choices=['HiPA', 'IMS-HiPA'])
 
     parser.add_argument('--n_warmup', type=int, default=1)
     parser.add_argument('--variant1', action='store_true', help='continue with the next patch if successful')
@@ -29,7 +29,7 @@ def parse_args():
                         choices=['vggface', 'webface', 'arcface', 'cosface'],
                         help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
-    parser.add_argument('--b', type=int, default=2)
+    parser.add_argument('--b', type=int, help="the base value of IMS-HiPA", default=2)
 
     parser.add_argument('--img_dir', type=str, default='lfw_preprocess/lfw_crop_margin_5')
     parser.add_argument('--model_dir', type=str, default='./pretrained_model')
@@ -43,9 +43,10 @@ if __name__ == "__main__":
     # Parse arguments
     args = parse_args()
 
+    optimizer = args.optimizer
     # Save configurations
     config = {
-        'method': 'Hill-Climbing',
+        'method': optimizer,
         'max_query': args.max_query,
         'n_warmup': args.n_warmup,
         'early_stop': args.early_stop,
@@ -57,16 +58,15 @@ if __name__ == "__main__":
         'b': args.b,
     }
 
-    exp_dir = args.exp_dir
-    baseline = 'HillClimbing_IMS'
-    if not args.variant1 and not args.variant2:
-        exp_dir = f'{exp_dir}/{baseline}_maxQuery-{args.max_query}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
-    else:
+    baseline = optimizer
+    if optimizer == 'IMS-HiPA':
+        config['b'] = args.b
         config['variant1'] = args.variant1
         config['variant2'] = args.variant2
+        baseline += f'_Variant1-{args.variant1}_Variant2-{args.variant2}'
 
-        exp_dir = (f'{exp_dir}/{baseline}_Variant1-{args.variant1}_Variant2-{args.variant2}_'
-                   f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
+    exp_dir = (f'{args.exp_dir}/{baseline}_Variant1-{args.variant1}_Variant2-{args.variant2}_'
+               f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
 
     os.makedirs(exp_dir, exist_ok=True)
 
@@ -89,8 +89,10 @@ if __name__ == "__main__":
     victim_model_name = args.victim_model_name
     if victim_model_name in ['vggface', 'webface']:
         img_h, img_w = 160, 160
+        patch_s = 20
     else:  # arcface, cosface
         img_h, img_w = 112, 112
+        patch_s = 14
     MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
     print('Load Pre-trained model - Done!')
 
@@ -124,7 +126,11 @@ if __name__ == "__main__":
 
         best_psnr_success, best_ind_success = None, None
 
-        algo = HillClimbing(max_query=args.max_query, img_h=img_h, img_w=img_w,
+        if optimizer == 'HiPA':
+            algo = HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s,
+                        fitness=fitness, n_warmup=args.n_warmup, early_stop=args.early_stop)
+        else:
+            algo = IMS_HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w,
                             fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
                             n_warmup=args.n_warmup, early_stop=args.early_stop)
 

@@ -9,7 +9,7 @@ from core import Individual
 from utils.evolutionary_algorithms import isBetter
 
 
-class HillClimbing:
+class IMS_HiPA:
     def __init__(self, max_query, img_h, img_w, fitness, b, variant1=False, variant2=False, n_warmup=1,
                  early_stop=False):
         self.max_query = max_query
@@ -27,6 +27,7 @@ class HillClimbing:
         self.patch_before_refining = None
         self.w = 1.0
         self.b = b
+
     def _get_all_locations(self, patch_s):
         list_locs = []
         for i in range(0, self.img_h, patch_s):
@@ -46,7 +47,7 @@ class HillClimbing:
         _patch = patch.clone()
         x_min = random.randint(0, patch_size - 1)
         y_min = random.randint(0, patch_size - 1)
-        width = random.randint(math.ceil(patch_size*0.18), math.floor(patch_size*0.36))
+        width = random.randint(math.ceil(patch_size * 0.18), math.floor(patch_size * 0.36))
         color = torch.rand(3).cuda()  # Random RGB color
 
         _patch[:, x_min: x_min + width, y_min: y_min + width] = color.unsqueeze(1).unsqueeze(2)
@@ -98,7 +99,6 @@ class HillClimbing:
 
         return best_idv, best_patch
 
-
     ######################################## Step-2: Patch Content Optimization ########################################
     def _hillClimbing(self, best_idv, best_patch, patch_s):
         new_idv = deepcopy(best_idv)
@@ -109,12 +109,11 @@ class HillClimbing:
         self._log()
         self.prev_n_eval = self.fitness.n_eval
 
-        if new_idv.adv_score > best_idv.adv_score:  # Focus on finding a fucking strong adversarial patch
+        if new_idv.adv_score > best_idv.adv_score:  # Focus on finding a strong adversarial patch
             best_idv = new_idv
             best_patch = new_patch
 
         return best_idv, best_patch
-
 
     ############################################ Step-3: Stealth Refinement ############################################
     def _refine(self, idv):
@@ -167,32 +166,37 @@ class HillClimbing:
         patch_s = 8
         min_query = self.max_query
         found = False
-        best_idv = []
-        best_patch = []
+        list_best_idv, list_best_patch = [], []
+
         cannot_add_new_patch = False
+        # Init the first HiPA
         idv, patch = self._promising_region_selection(patch_s)
         if idv.adv_score >= 0:
             found = True
             min_query = self.fitness.n_eval
-        best_idv.append(idv)
-        best_patch.append(patch)
+        list_best_idv.append(idv)
+        list_best_patch.append(patch)
         self.update_history(idv, patch_s)
+
         n_step = 1
-        # variant1
         while (self.variant1 or not found) and self.fitness.n_eval < max_query:
             n_step += 1
-            i = 0
-            while i < len(best_idv):
+            i = 0  # Index of the attacker in list_attackers
+
+            while i < len(list_best_idv):
                 if n_step % (self.b ** i) == 0:
-                    patch_size = best_idv[i].patch_size
-                    best_idv[i], best_patch[i] = self._hillClimbing(best_idv[i], best_patch[i], patch_size)
-                    self.update_history(best_idv[i], patch_size)
-                    while i > 0 and best_idv[i].adv_score > best_idv[i - 1].adv_score:
-                        del best_idv[i - 1]
-                        del best_patch[i - 1]
+                    patch_size = list_best_idv[i].patch_size
+                    list_best_idv[i], list_best_patch[i] = self._hillClimbing(list_best_idv[i], list_best_patch[i],
+                                                                              patch_size)
+                    self.update_history(list_best_idv[i], patch_size)
+
+                    while i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score:
+                        # print(f'Kill HiPA (p={list_best_idv[i - 1].patch_size})')
+                        del list_best_idv[i - 1]
+                        del list_best_patch[i - 1]
                         i -= 1
 
-                    if best_idv[i].adv_score >= 0:
+                    if list_best_idv[i].adv_score >= 0:
                         if not found:
                             min_query = self.fitness.n_eval
                         found = True
@@ -201,36 +205,40 @@ class HillClimbing:
                 i += 1
                 if self.fitness.n_eval >= max_query:
                     break
-            if (self.variant1 or not found) and n_step == self.b**t:
+
+            if (self.variant1 or not found) and n_step == self.b ** t:
                 patch_s += 2
                 query = math.ceil(self.img_h / patch_s) * math.ceil(self.img_w / patch_s) * self.n_warmup
                 if query > max_query - self.fitness.n_eval:
+                    # print(f'Cannot initialize HiPA (p={patch_s})')
                     cannot_add_new_patch = True
                     break
                 else:
+                    # print(f'Step {n_step}: Initialize HiPA (p={patch_s})')
                     idv, patch = self._promising_region_selection(patch_s)
                     self.update_history(idv, patch_s)
-                    best_idv.append(idv)
-                    best_patch.append(patch)
+                    list_best_idv.append(idv)
+                    list_best_patch.append(patch)
                     if idv.adv_score >= 0:
                         if not found:
                             min_query = self.fitness.n_eval
-                        found = True    
+                        found = True
                     t += 1
         # main
         while (not self.variant2 or cannot_add_new_patch) and self.fitness.n_eval < max_query:
             n_step += 1
             i = 0
-            while i < len(best_idv):
+            while i < len(list_best_idv):
                 if n_step % (self.b ** i) == 0:
-                    patch_size = best_idv[i].patch_size
-                    best_idv[i], best_patch[i] = self._hillClimbing(best_idv[i], best_patch[i], patch_size)
-                    self.update_history(best_idv[i], patch_size)
-                    while i > 0 and best_idv[i].adv_score > best_idv[i - 1].adv_score:
-                        del best_idv[i - 1]
-                        del best_patch[i - 1]
+                    patch_size = list_best_idv[i].patch_size
+                    list_best_idv[i], list_best_patch[i] = self._hillClimbing(list_best_idv[i], list_best_patch[i],
+                                                                              patch_size)
+                    self.update_history(list_best_idv[i], patch_size)
+                    while i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score:
+                        del list_best_idv[i - 1]
+                        del list_best_patch[i - 1]
                         i -= 1
-                    if best_idv[i].adv_score >= 0:
+                    if list_best_idv[i].adv_score >= 0:
                         if not found:
                             min_query = self.fitness.n_eval
                         found = True
@@ -242,13 +250,13 @@ class HillClimbing:
                     break
 
         # variant2
-        patch_size = best_idv[0].patch_size
+        patch_size = list_best_idv[0].patch_size
         while self.variant2 and found and self.fitness.n_eval < max_query:
-            best_idv[0], best_patch[0] = self._hillClimbing(best_idv[0], best_patch[0], patch_size)
-            self.update_history(best_idv[0], patch_size)
+            list_best_idv[0], list_best_patch[0] = self._hillClimbing(list_best_idv[0], list_best_patch[0], patch_size)
+            self.update_history(list_best_idv[0], patch_size)
 
         # step 3
-        patch = best_idv[0]
+        patch = list_best_idv[0]
         self.patch_before_refining = deepcopy(patch)
         patch = self._refine(patch)
         return patch, patch_size, min_query
