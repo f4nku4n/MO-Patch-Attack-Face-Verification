@@ -53,6 +53,11 @@ class IMS_HiPA:
         _patch[:, x_min: x_min + width, y_min: y_min + width] = color.unsqueeze(1).unsqueeze(2)
         return _patch
 
+    @staticmethod
+    def _success(idv):
+        succ = getattr(idv, 'success', None)
+        return bool(succ) if succ is not None else bool(idv.adv_score >= 0)
+    
     def update_history(self, idv, patch_s):
         if patch_s not in self.history:
             self.history[patch_s] = [[idv.adv_score.item(), idv.psnr_score.item()]]
@@ -130,7 +135,7 @@ class IMS_HiPA:
             self._log()
             self.prev_n_eval = self.fitness.n_eval
 
-            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
+            if self._success(new_idv) and new_idv.psnr_score > best_idv.psnr_score:
                 best_idv = new_idv
                 break
             new_w = round(new_w + 0.1, 1)
@@ -146,7 +151,7 @@ class IMS_HiPA:
             self._log()
             self.prev_n_eval = self.fitness.n_eval
 
-            if new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score:
+            if self._success(new_idv) and new_idv.psnr_score > best_idv.psnr_score:
                 best_idv = new_idv
                 self.w = new_w
                 break
@@ -171,7 +176,7 @@ class IMS_HiPA:
         cannot_add_new_patch = False
         # Init the first HiPA
         idv, patch = self._promising_region_selection(patch_s)
-        if idv.adv_score >= 0:
+        if self._success(idv):
             found = True
             min_query = self.fitness.n_eval
         list_best_idv.append(idv)
@@ -196,7 +201,7 @@ class IMS_HiPA:
                         del list_best_patch[i - 1]
                         i -= 1
 
-                    if list_best_idv[i].adv_score >= 0:
+                    if self._success(list_best_idv[i]):
                         if not found:
                             min_query = self.fitness.n_eval
                         found = True
@@ -219,7 +224,7 @@ class IMS_HiPA:
                     self.update_history(idv, patch_s)
                     list_best_idv.append(idv)
                     list_best_patch.append(patch)
-                    if idv.adv_score >= 0:
+                    if self._success(idv):
                         if not found:
                             min_query = self.fitness.n_eval
                         found = True
@@ -238,7 +243,7 @@ class IMS_HiPA:
                         del list_best_idv[i - 1]
                         del list_best_patch[i - 1]
                         i -= 1
-                    if list_best_idv[i].adv_score >= 0:
+                    if self._success(list_best_idv[i]):
                         if not found:
                             min_query = self.fitness.n_eval
                         found = True
