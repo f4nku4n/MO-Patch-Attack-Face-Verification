@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--mask_dir', type=str, default='./mask')
     parser.add_argument('--exp_dir', type=str, default='./exp_results')
     parser.add_argument('--setting', type=str, default='same', choices=['same','different'])
-    parser.add_argument('pair_path', type=str, default=None,
+    parser.add_argument('--pair_path', type=str, default=None,
                     help='custom pair file (e.g. same_seed_42_replace.txt); default ./lfw_preprocess/<setting>_seed_<seed>.txt')
     return parser.parse_args()
 
@@ -110,8 +110,8 @@ if __name__ == "__main__":
     toTensor = transforms.ToTensor()
 
     random_seed = args.seed
-    for i in range(n_tested_imgs):
     success_list = []
+    for i in range(n_tested_imgs):
         print(f"Image #{i + 1}/{n_tested_imgs}")
         if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
             continue
