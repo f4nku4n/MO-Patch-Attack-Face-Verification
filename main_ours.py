@@ -36,6 +36,8 @@ def parse_args():
     parser.add_argument('--mask_dir', type=str, default='./mask')
     parser.add_argument('--exp_dir', type=str, default='./exp_results')
     parser.add_argument('--setting', type=str, default='same', choices=['same','different'])
+    parser.add_argument('pair_path', type=str, default=None,
+                    help='custom pair file (e.g. same_seed_42_replace.txt); default ./lfw_preprocess/<setting>_seed_<seed>.txt')
     return parser.parse_args()
 
 
@@ -98,17 +100,18 @@ if __name__ == "__main__":
 
     # Load data
     n_tested_imgs = args.n_tested_imgs
-    pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
+    pair_path = args.pair_path or f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
     # if victim_model_name != 'vggface':
     #     pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
-    print('Load Data - Done!')
+    n_tested_imgs  = min (n_tested_imgs, len(DATA))
+    print(f'Load Data - Done! ({pair_path}, {n_tested_imgs} pairs)')
 
     toTensor = transforms.ToTensor()
 
     random_seed = args.seed
-    success_list = []
     for i in range(n_tested_imgs):
+    success_list = []
         print(f"Image #{i + 1}/{n_tested_imgs}")
         if os.path.isfile(f'{exp_log_dir}/{i}.p') and continue_exp:
             continue
