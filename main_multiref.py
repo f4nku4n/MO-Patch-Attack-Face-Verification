@@ -34,6 +34,7 @@ def parse_args():
     pa.add_argument('--img_dir', type=str, default='lfw_preprocess/lfw_crop_margin_5')
     pa.add_argument('--model_dir', type=str, default='./pretrained_model')
     pa.add_argument('--exp_dir', type=str, default='./exp_results_multiref')
+    pa.add_argument('--tag', type=str, default='', help='extra name for the run folder, e.g. N5')
     return pa.parse_args()
 
 
@@ -69,7 +70,8 @@ def stats(fitness, idv, ref_a_feat):
 def main():
     args = parse_args()
     v = f'_Variant1-{args.variant1}_Variant2-{args.variant2}'
-    exp_dir = (f'{args.exp_dir}/IMS-HiPA-MultiRef{v}_Agg-{args.agg}_maxQuery-{args.max_query}'
+    tag = f'_{args.tag}' if args.tag else ''
+    exp_dir = (f'{args.exp_dir}/IMS-HiPA-MultiRef{tag}{v}_Agg-{args.agg}_maxQuery-{args.max_query}'
                f'_VictimModel-{args.victim_model_name}/Seed{args.seed}')
     img_dir_out, log_dir = f'{exp_dir}/images', f'{exp_dir}/logs'
     os.makedirs(img_dir_out, exist_ok=True)
@@ -117,6 +119,8 @@ def main():
 
         print(f'Pair #{i + 1}/{n_pairs} {name}: N={len(ref_ids)} | fooled {final["n_success"]}/{len(ref_ids)} '
               f'(before refining {before["n_success"]}) | all: {final["success_all"]} | '
+              f'A: {"fooled" if final["success_A"] else "not fooled"} (adv {final["adv_A"]:.3f}, '
+              f'before refining {"fooled" if before["success_A"] else "not fooled"}) | '
               f'PSNR {best.psnr_score.item():.4f} | patch size {best_patch_size} | min query {min_query}')
 
         save_image(adv_img, f'{img_dir_out}/{i}_Fooled-{final["n_success"]}of{len(ref_ids)}.png')
@@ -141,6 +145,9 @@ def main():
         summ[f'mean_n_success{suf}'] = float(np.mean([d['n_success' + suf] for d in logs]))
         summ[f'mean_frac_success{suf}'] = float(np.mean([d['frac_success' + suf] for d in logs]))
         summ[f'ASR_A{suf}'] = float(np.mean([d['success_A' + suf] for d in logs]))
+        fooled_all = [d for d in logs if d['success_all' + suf]]
+        summ[f'ASR_A_given_all{suf}'] = (float(np.mean([d['success_A' + suf] for d in fooled_all]))
+                                        if fooled_all else float('nan'))
     summ['mean_n_refs'] = float(np.mean([d['n_refs'] for d in logs]))
     summ['mean_psnr'] = float(np.mean([d['psnr_score'] for d in logs]))
     json.dump(summ, open(f'{exp_dir}/summary.json', 'w'), indent=4)

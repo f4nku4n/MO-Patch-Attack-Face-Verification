@@ -5,7 +5,8 @@ import argparse
 import numpy as np
  
 KEYS = ['ASR_all', 'mean_n_success', 'mean_frac_success', 'ASR_all_before_refining',
-        'mean_n_success_before_refining', 'mean_frac_success_before_refining', 'ASR_A', 'mean_psnr', 'mean_n_refs']
+        'mean_n_success_before_refining', 'mean_frac_success_before_refining', 'ASR_A', 'ASR_A_given_all',
+        'ASR_A_before_refining', 'ASR_A_given_all_before_refining', 'mean_psnr', 'mean_n_refs']
  
 if __name__ == '__main__':
     pa = argparse.ArgumentParser()
@@ -18,7 +19,7 @@ if __name__ == '__main__':
             continue
         row = {'run': os.path.basename(run), 'n_seeds': len(seeds)}
         for k in KEYS:
-            vals = [s[k] for s in seeds if k in s]
+            vals = [s[k] for s in seeds if k in s and s[k] == s[k]]
             row[k] = f'{np.mean(vals):.4f} ({np.std(vals):.4f})' if vals else ''
         rows.append(row)
         print(row['run'], f"| seeds {row['n_seeds']}")
@@ -32,4 +33,3 @@ if __name__ == '__main__':
             w.writeheader()
             w.writerows(rows)
         print('Saved', out)
- 
