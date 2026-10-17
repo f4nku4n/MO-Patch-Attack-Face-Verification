@@ -71,6 +71,12 @@ class MultiRefFitness:
             idv.adv_vec = adv_mat[i]
             idv.n_success = int((adv_mat[i] >= 0).sum())
             idv.success = idv.n_success == self.n_refs
+            idv.deficit = float(adv_mat[i].clamp(max=0).sum())   # <= 0, = 0 when all references are fooled
+            idv.margin = float(adv_mat[i].min())                 # score of the hardest reference
+            # Lexi
+            #   1) more references fooled  2) smaller remaining deficit  3) larger margin
+            # Only for --agg lexi; the other aggregations keep comparing the scalar adv_score.
+            idv.key = (idv.n_success, idv.deficit, idv.margin) if self.agg == 'lexi' else None
             idv.adv_score = scores[i]
             idv.psnr_score = psnr[i]
             idv.F = scores[i]

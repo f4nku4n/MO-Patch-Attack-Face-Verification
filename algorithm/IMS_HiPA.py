@@ -57,6 +57,23 @@ class IMS_HiPA:
     def _success(idv):
         succ = getattr(idv, 'success', None)
         return bool(succ) if succ is not None else bool(idv.adv_score >= 0)
+
+    @staticmethod
+    def _key(idv):
+        """Lexicographic key (n_success, deficit, margin), or None when there is no such key
+        (single-reference fitness, or a multi-reference run with --agg != lexi)."""
+        return getattr(idv, 'key', None)
+
+    @classmethod
+    def _better(cls, a, b):
+        """Is patch a better than patch b?
+        With the lexicographic key: compare the number of fooled references first, then the
+        remaining deficit, and only then the margin (Python compares tuples in that order).
+        Otherwise fall back to the scalar adv_score, as in the original HiPA."""
+        ka, kb = cls._key(a), cls._key(b)
+        if ka is None or kb is None:
+            return a.adv_score > b.adv_score
+        return ka > kb
     
     def update_history(self, idv, patch_s):
         if patch_s not in self.history:
@@ -89,12 +106,18 @@ class IMS_HiPA:
             self._log()
             self.prev_n_eval = self.fitness.n_eval
 
-            idx_best = 0
-            for j in range(1, len(_X)):
-                if isBetter(_X[idx_best], _X[j]):
-                    idx_best = j
-            list_adv_scores = [idv.adv_score.item() for idv in _X]
-            results[loc] = np.mean(list_adv_scores)
+            if self._key(_X[0]) is not None:        # lexicographic: score of the cell = key of its best patch
+                idx_best = 0
+                for j in range(1, len(_X)):
+                    if self._better(_X[j], _X[idx_best]):
+                        idx_best = j
+                results[loc] = self._key(_X[idx_best])
+            else:                                   # original behaviour (single reference / other --agg)
+                idx_best = 0
+                for j in range(1, len(_X)):
+                    if isBetter(_X[idx_best], _X[j]):
+                        idx_best = j
+                results[loc] = np.mean([idv.adv_score.item() for idv in _X])
             X.append(_X[idx_best])
 
         loc_best_id = max(results, key=results.get)
@@ -114,16 +137,28 @@ class IMS_HiPA:
         self._log()
         self.prev_n_eval = self.fitness.n_eval
 
-        if new_idv.adv_score > best_idv.adv_score:  # Focus on finding a strong adversarial patch
+        if self._better(new_idv, best_idv):  # Focus on finding a strong adversarial patch
             best_idv = new_idv
             best_patch = new_patch
 
         return best_idv, best_patch
 
     ############################################ Step-3: Stealth Refinement ############################################
+    def _accept_refined(self, new_idv, best_idv, base_n):
+        if base_n is not None:
+            n = int(getattr(new_idv, 'n_success', 0))
+            if n > base_n:
+                return True
+            if n < base_n:
+                return False
+        return bool(self._success(new_idv) and new_idv.psnr_score > best_idv.psnr_score)
+
     def _refine(self, idv):
         if self.fitness.n_eval >= self.max_query:
             return idv
+        base_n = getattr(idv, 'n_success', None)   # None -> single-reference run, original behaviour
+        if base_n is not None:
+            base_n = int(base_n)
         new_w = 0.1
         best_idv = idv
         while new_w < self.w:
@@ -135,7 +170,7 @@ class IMS_HiPA:
             self._log()
             self.prev_n_eval = self.fitness.n_eval
 
-            if self._success(new_idv) and new_idv.psnr_score > best_idv.psnr_score:
+            if self._accept_refined(new_idv, best_idv, base_n):
                 best_idv = new_idv
                 break
             new_w = round(new_w + 0.1, 1)
@@ -151,7 +186,7 @@ class IMS_HiPA:
             self._log()
             self.prev_n_eval = self.fitness.n_eval
 
-            if self._success(new_idv) and new_idv.psnr_score > best_idv.psnr_score:
+            if self._accept_refined(new_idv, best_idv, base_n):
                 best_idv = new_idv
                 self.w = new_w
                 break
@@ -195,7 +230,7 @@ class IMS_HiPA:
                                                                               patch_size)
                     self.update_history(list_best_idv[i], patch_size)
 
-                    while i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score:
+                    while i > 0 and self._better(list_best_idv[i], list_best_idv[i - 1]):
                         # print(f'Kill HiPA (p={list_best_idv[i - 1].patch_size})')
                         del list_best_idv[i - 1]
                         del list_best_patch[i - 1]
@@ -239,7 +274,7 @@ class IMS_HiPA:
                     list_best_idv[i], list_best_patch[i] = self._hillClimbing(list_best_idv[i], list_best_patch[i],
                                                                               patch_size)
                     self.update_history(list_best_idv[i], patch_size)
-                    while i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score:
+                    while i > 0 and self._better(list_best_idv[i], list_best_idv[i - 1]):
                         del list_best_idv[i - 1]
                         del list_best_patch[i - 1]
                         i -= 1
@@ -265,4 +300,3 @@ class IMS_HiPA:
         self.patch_before_refining = deepcopy(patch)
         patch = self._refine(patch)
         return patch, patch_size, min_query
-
