@@ -1,4 +1,5 @@
 import cv2
+import torch
 import numpy as np
 from tqdm import tqdm
 
@@ -18,7 +19,7 @@ def render(x, h, w):
         )
         alpha = row[6]
         phenotype = cv2.addWeighted(overlay, alpha, phenotype, 1 - alpha, 0)
-    return phenotype
+    return phenotype / 255.0
 
 def mutate(soln, mut=0.3):
     new_specie = soln.copy()
@@ -115,60 +116,62 @@ class PatchRS:
         assert loc_t > 1
 
         best_idv = Individual(self.patch_s, (self.img_h, self.img_w))
-        best_idv.patch = best_patch
+        best_idv.patch = torch.from_numpy(best_patch.copy()).permute(2, 0, 1).cuda()
         best_idv.location = (best_loc[0], best_loc[0] + s, best_loc[1], best_loc[1] + s)
 
         self.fitness.evaluate([best_idv])
         self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
         self.pbar.set_postfix(query=self.fitness.n_eval)
+        self.prev_n_eval = self.fitness.n_eval
 
         if best_idv.adv_score >= 0 and not found:
             found = True
             min_query = self.fitness.n_eval
+        if not found:
+            for it in range(1, self.max_query):
+                s_it = int(max(self.p_selection(it) ** .5 * s, 1))
 
-        for it in range(1, self.max_query):
-            s_it = int(max(self.p_selection(it) ** .5 * s[0], 1))
+                ## Sample update
+                new_patch_geno = best_patch_geno.copy()
+                new_patch = best_patch.copy()
+                new_loc = best_loc.copy()
 
-            ## Sample update
-            new_patch_geno = best_patch_geno.copy()
-            new_patch = best_patch.copy()
-            new_loc = best_loc.copy()
+                sh_it = int(max(self.sh_selection(it) * H, 0))
+                sw_it = int(max(self.sh_selection(it) * W, 0))
+                update_loc = (it % loc_t == 0) and (sh_it > 0) and (sw_it > 0)
+                if self.update_loc_period < 0 < sh_it and sw_it > 0:
+                    update_loc = not update_loc
+                update_patch = not update_loc
 
-            sh_it = int(max(self.sh_selection(it) * H, 0))
-            sw_it = int(max(self.sh_selection(it) * W, 0))
-            update_loc = (it % loc_t == 0) and (sh_it > 0) and (sw_it > 0)
-            if self.update_loc_period < 0 < sh_it and sw_it > 0:
-                update_loc = not update_loc
-            update_patch = not update_loc
+                if update_patch:
+                    # update patch
+                    if s_it > 1:
+                        new_patch_geno = mutate(best_patch_geno, mut=1.1)
+                    else:
+                        new_patch_geno = mutate(best_patch_geno, mut=-0.1)
+                    new_patch = render(new_patch_geno, s, s)
 
-            if update_patch:
-                # update patch
-                if s_it > 1:
-                    new_patch_geno = mutate(best_patch_geno, mut=1.1)
-                else:
-                    new_patch_geno = mutate(best_patch_geno, mut=-0.1)
-                new_patch = render(new_patch_geno, s[0], s[1])
+                if update_loc:
+                    new_loc[0] = np.clip(new_loc[0] + np.random.randint(-sh_it, sh_it + 1), 0, H - s)
+                    new_loc[1] = np.clip(new_loc[1] + np.random.randint(-sw_it, sw_it + 1), 0, W - s)
 
-            if update_loc:
-                new_loc[0] = np.clip(new_loc[0] + np.random.randint(-sh_it, sh_it + 1), 0, H - s[0])
-                new_loc[1] = np.clip(new_loc[1] + np.random.randint(-sw_it, sw_it + 1), 0, W - s[1])
+                new_idv = Individual(self.patch_s, (self.img_h, self.img_w))
+                new_idv.patch = torch.from_numpy(new_patch.copy()).permute(2, 0, 1).cuda()
+                new_idv.location = (new_loc[0], new_loc[0] + s, new_loc[1], new_loc[1] + s)
+                self.fitness.evaluate([new_idv])
+                self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
+                self.pbar.set_postfix(query=self.fitness.n_eval)
+                self.prev_n_eval = self.fitness.n_eval
 
-            new_idv = Individual(self.patch_s, (self.img_h, self.img_w))
-            new_idv.patch = new_patch
-            new_idv.location = (new_loc[0], new_loc[0] + s, new_loc[1], new_loc[1] + s)
-            self.fitness.evaluate([new_idv])
-            self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
-            self.pbar.set_postfix(query=self.fitness.n_eval)
+                if new_idv.adv_score > best_idv.adv_score:
+                    best_patch_geno = new_patch_geno.copy()
+                    best_patch = new_patch.copy()
+                    best_loc = new_loc.copy()
+                    best_idv = new_idv
 
-            if new_idv.adv_score > best_idv.adv_score:
-                best_patch_geno = new_patch_geno.copy()
-                best_patch = new_patch.copy()
-                best_loc = new_loc.copy()
-                best_idv = new_idv
-
-            if best_idv.adv_score >= 0 and not found:
-                found = True
-                min_query = self.fitness.n_eval
+                if best_idv.adv_score >= 0:
+                    min_query = self.fitness.n_eval
+                    break
 
         best_patch_size = best_idv.patch_size
         return best_idv, best_patch_size, min_query

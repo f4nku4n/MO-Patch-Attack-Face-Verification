@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument('--model_dir', type=str, default='./pretrained_model')
     parser.add_argument('--mask_dir', type=str, default='./mask')
     parser.add_argument('--exp_dir', type=str, default='./exp_results')
-    parser.add_argument('--setting', type=str, default='same', choices=['same','different'])
+    parser.add_argument('--setting', type=str, default='same', choices=['same', 'different'])
     return parser.parse_args()
 
 
@@ -42,7 +42,6 @@ if __name__ == "__main__":
     config = {
         'method': optimizer,
         'max_query': args.max_query,
-        'n_warmup': args.n_warmup,
         'seed': args.seed,
         'n_tested_imgs': args.n_tested_imgs,
         'victim_model': args.victim_model_name,
@@ -84,9 +83,10 @@ if __name__ == "__main__":
 
     # Load data
     n_tested_imgs = args.n_tested_imgs
-    pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
-    # if victim_model_name != 'vggface':
-    #     pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
+    pair_path = './lfw_preprocess/pairs.txt'
+    if victim_model_name != 'vggface':
+        pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
+    # pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
     print('Load Data - Done!')
 
