@@ -1,27 +1,61 @@
 import cv2
 import numpy as np
 from tqdm import tqdm
-from attack_methods.base import Attacker
-from attack_methods.utils import l2_compute
-from attack_methods.CamoPatch import render, mutate
 
-class PatchRS(Attacker):
-    def __init__(self, img_cls, loss_function, p_init=0.4, patch_size=(40, 40),
-                 update_loc_period=4, max_query=10000, setting='realistic'):
-        super().__init__(max_query=max_query)
-        self.img_cls = img_cls
-        self.loss_function = loss_function
-        self.loss_function.bind_base_image(img_cls)
+from core import Individual
+
+def render(x, h, w):
+    phenotype = np.ones((h, w, 3)) # load a white patch w*w
+    radius_avg = (phenotype.shape[0] + phenotype.shape[1]) / 2 / 6
+    for row in x:
+        overlay = phenotype.copy()
+        cv2.circle(
+            overlay,
+            center=(int(row[1] * h), int(row[0] * w)),
+            radius=int(row[2] * radius_avg),
+            color=(int(row[3] * 255), int(row[4] * 255), int(row[5] * 255)),
+            thickness=-1,
+        )
+        alpha = row[6]
+        phenotype = cv2.addWeighted(overlay, alpha, phenotype, 1 - alpha, 0)
+    return phenotype
+
+def mutate(soln, mut=0.3):
+    new_specie = soln.copy()
+
+    # Randomization for Evolution
+    genes = soln.shape[0]
+    length = soln.shape[1]
+    y = np.random.randint(0, genes)
+    change = np.random.randint(0, length + 1)
+
+    selection = np.random.choice(length, size=change, replace=False)
+
+    if np.random.rand() < mut:
+        new_specie[y, selection] = np.random.rand(len(selection))
+    else:
+        new_specie[y, selection] += (np.random.rand(len(selection)) - 0.5) / 3
+        new_specie[y, selection] = np.clip(new_specie[y, selection], 0, 1)
+    return new_specie
+
+class PatchRS:
+    def __init__(self, max_query, img_h, img_w, patch_s, fitness, p_init=0.4, update_loc_period=4):
+        self.max_query = max_query
+        self.img_h, self.img_w = img_h, img_w
+        self.patch_s = patch_s
+
+        self.fitness = fitness
+
+        self.pbar = None
+        self.prev_n_eval = 0
 
         self.p_init = p_init
 
-        self.patch_size = patch_size
         self.N = 100
         self.update_loc_period = update_loc_period
         self.rescale_schedule = True
 
         self.init_patches = 'random_squares'
-        self.setting = setting
 
     def p_selection(self, it):
         """ schedule to decrease the parameter p """
@@ -60,36 +94,39 @@ class PatchRS(Attacker):
         return t
 
     def get_init_patch(self, s):
-        if self.setting == 'realistic':
-            patch_geno = np.random.randint(0, 256, size=(self.N, 7))
-        else:
-            patch_geno = np.random.rand(self.N, 7)  # Difference
-        patch = render(patch_geno, s[0], s[1])
+        patch_geno = np.random.rand(self.N, 7)  # Difference
+        patch = render(patch_geno, s, s)
         return patch_geno, patch
 
-    def run(self):
-        H, W, C = self.img_cls.shape
-        s = self.patch_size
+    def solve(self):
+        found = False
+        min_query = self.max_query
 
-        best_loc = [np.random.randint(0, H - s[0]), np.random.randint(0, W - s[1])]
+        self.pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
+        self.prev_n_eval = self.fitness.n_eval
 
+        H, W = self.img_h, self.img_w
+        s = self.patch_s
+
+        best_loc = [np.random.randint(0, H - s), np.random.randint(0, W - s)]
         best_patch_geno, best_patch = self.get_init_patch(s)
 
         loc_t = abs(self.update_loc_period)
         assert loc_t > 1
 
-        best_adversarial, best_loss = self.loss_function.evaluate_patch(
-            best_patch, best_loc
-        )
-        best_l2 = l2_compute(
-            adv_patch=best_patch,
-            orig_patch=self.img_cls[best_loc[0]: best_loc[0] + s[0], best_loc[1]: best_loc[1] + s[1], :].copy(),
-            integer=(self.setting == 'realistic')
-        )
-        self.count_query(best_adversarial)
-        self.process.append([self.n_query, best_adversarial, best_loc, best_patch, best_l2, best_loss])
+        best_idv = Individual(self.patch_s, (self.img_h, self.img_w))
+        best_idv.patch = best_patch
+        best_idv.location = (best_loc[0], best_loc[0] + s, best_loc[1], best_loc[1] + s)
 
-        for it in tqdm(range(1, self.max_query)):
+        self.fitness.evaluate([best_idv])
+        self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
+        self.pbar.set_postfix(query=self.fitness.n_eval)
+
+        if best_idv.adv_score >= 0 and not found:
+            found = True
+            min_query = self.fitness.n_eval
+
+        for it in range(1, self.max_query):
             s_it = int(max(self.p_selection(it) ** .5 * s[0], 1))
 
             ## Sample update
@@ -107,41 +144,31 @@ class PatchRS(Attacker):
             if update_patch:
                 # update patch
                 if s_it > 1:
-                    new_patch_geno = mutate(best_patch_geno, mut=1.1, setting=self.setting)
+                    new_patch_geno = mutate(best_patch_geno, mut=1.1)
                 else:
-                    new_patch_geno = mutate(best_patch_geno, mut=-0.1, setting=self.setting)
-                new_patch = render(new_patch_geno, s[0], s[1], setting=self.setting)
+                    new_patch_geno = mutate(best_patch_geno, mut=-0.1)
+                new_patch = render(new_patch_geno, s[0], s[1])
 
             if update_loc:
                 new_loc[0] = np.clip(new_loc[0] + np.random.randint(-sh_it, sh_it + 1), 0, H - s[0])
                 new_loc[1] = np.clip(new_loc[1] + np.random.randint(-sw_it, sw_it + 1), 0, W - s[1])
 
-            new_adversarial, new_loss = self.loss_function.evaluate_patch(
-                new_patch, new_loc
-            )
-            new_l2 = l2_compute(
-                new_patch,
-                self.img_cls[new_loc[0]: new_loc[0] + s[0], new_loc[1]: new_loc[1] + s[1], :].copy(),
-                integer=(self.setting == 'realistic')
-            )
-            self.count_query(new_adversarial)
+            new_idv = Individual(self.patch_s, (self.img_h, self.img_w))
+            new_idv.patch = new_patch
+            new_idv.location = (new_loc[0], new_loc[0] + s, new_loc[1], new_loc[1] + s)
+            self.fitness.evaluate([new_idv])
+            self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
+            self.pbar.set_postfix(query=self.fitness.n_eval)
 
-            if is_better(new_adversarial, best_adversarial, new_loss, best_loss, new_l2, best_l2):
-                best_adversarial = new_adversarial
-                best_loss = new_loss
-                best_patch_geno = new_patch_geno
-                best_patch = new_patch
-                best_loc = new_loc
-                best_l2 = new_l2
+            if new_idv.adv_score > best_idv.adv_score:
+                best_patch_geno = new_patch_geno.copy()
+                best_patch = new_patch.copy()
+                best_loc = new_loc.copy()
+                best_idv = new_idv
 
-            self.process.append([self.n_query, best_adversarial, best_loc, best_patch, best_l2, best_loss])
+            if best_idv.adv_score >= 0 and not found:
+                found = True
+                min_query = self.fitness.n_eval
 
-
-def is_better(new_adversarial, adversarial, new_loss, loss, new_l2, l2):
-    if not adversarial and new_adversarial:
-        return True
-    if new_adversarial and adversarial:
-        return new_l2 < l2
-    if not new_adversarial and not adversarial:
-        return new_loss < loss
-    return False
+        best_patch_size = best_idv.patch_size
+        return best_idv, best_patch_size, min_query
