@@ -71,13 +71,13 @@ class CamoPatch:
 
                 if best_idv.adv_score >= 0 and new_idv.adv_score >= 0:
                     if new_idv.psnr_score > best_idv.psnr_score:
-                        best_patch_geno = patch_new_geno
-                        best_patch = patch_new
+                        best_patch_geno = patch_new_geno.copy()
+                        best_patch = patch_new.copy()
                         best_idv = new_idv
                 else:
-                    if new_idv.adv_score > best_idv.adv_score:  # minimization
-                        best_patch_geno = patch_new_geno
-                        best_patch = patch_new
+                    if new_idv.adv_score > best_idv.adv_score:
+                        best_patch_geno = patch_new_geno.copy()
+                        best_patch = patch_new.copy()
                         best_idv = new_idv
 
             else:  # Update location
