@@ -108,13 +108,14 @@ class CamoPatch:
                         best_idv = new_idv
 
                 else:
-                    diff = new_idv.adv_score - best_idv.adv_score
-                    curr_temp = self.temp / (it + 1)
-                    metropolis = math.exp(-diff / curr_temp)
+                    if best_idv.adv_score < 0:
+                        diff = new_idv.adv_score - best_idv.adv_score
+                        curr_temp = self.temp / (it + 1)
+                        metropolis = math.exp(-diff / curr_temp)
 
-                    if new_idv.adv_score < best_idv.adv_score or np.random.rand() < metropolis:
-                        best_loc = loc_new
-                        best_idv = new_idv
+                        if new_idv.adv_score > best_idv.adv_score or np.random.rand() < metropolis:
+                            best_loc = loc_new
+                            best_idv = new_idv
 
         best_patch_size = best_idv.patch_size
         return best_idv, best_patch_size, min_query
