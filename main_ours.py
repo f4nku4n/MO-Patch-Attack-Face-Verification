@@ -65,8 +65,8 @@ if __name__ == "__main__":
         config['variant2'] = args.variant2
         baseline += f'_Variant1-{args.variant1}_Variant2-{args.variant2}'
 
-    exp_dir = (f'{args.exp_dir}/{baseline}_Variant1-{args.variant1}_Variant2-{args.variant2}_'
-               f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
+    exp_dir = (f'{args.exp_dir}/{baseline}_'
+               f'maxQuery-{args.max_query}_Setting-{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
 
     os.makedirs(exp_dir, exist_ok=True)
 

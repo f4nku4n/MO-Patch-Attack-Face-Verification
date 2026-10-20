@@ -7,7 +7,7 @@ from core import Individual
 from algorithm.PatchRS import render, mutate
 
 class CamoPatch:
-    def __init__(self, max_query, img_h, img_w, patch_s, fitness, temp, update_loc_period=4):
+    def __init__(self, max_query, img_h, img_w, patch_s, fitness, mut=0.3, temp=300, update_loc_period=4):
         self.max_query = max_query
         self.img_h, self.img_w = img_h, img_w
         self.patch_s = patch_s
@@ -18,7 +18,7 @@ class CamoPatch:
         self.update_loc_period = update_loc_period
 
         self.N = 100
-        self.mut = 0.5
+        self.mut = mut
 
         self.pbar = None
         self.prev_n_eval = 0
@@ -33,6 +33,7 @@ class CamoPatch:
         h, w = self.img_h, self.img_w
         s = self.patch_s
 
+        # Best patch
         best_patch_geno = np.random.rand(self.N, 7)
         best_patch = render(best_patch_geno, s, s)
         best_loc = np.random.randint(h - s, size=2)
@@ -52,7 +53,7 @@ class CamoPatch:
         patch_counter = 0
         for it in range(1, self.max_query):
             patch_counter += 1
-            if patch_counter < self.update_loc_period:
+            if patch_counter < self.update_loc_period:  # Update patch content
                 patch_new_geno = mutate(best_patch_geno, self.mut)
                 patch_new = render(patch_new_geno, s, s)
 
@@ -79,7 +80,7 @@ class CamoPatch:
                         best_patch = patch_new
                         best_idv = new_idv
 
-            else:
+            else:  # Update location
                 patch_counter = 0
 
                 # location update

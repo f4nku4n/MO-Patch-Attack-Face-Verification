@@ -4,7 +4,7 @@ import argparse
 import pickle as p
 
 from core import Fitness
-from algorithm import PatchRS
+from algorithm import PatchRS, CamoPatch
 
 from dataset import LFW
 from factory import get_model
@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
     baseline = optimizer
     exp_dir = (f'{args.exp_dir}/{baseline}_'
-               f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
+               f'maxQuery-{args.max_query}_Setting-{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
 
     os.makedirs(exp_dir, exist_ok=True)
 
@@ -114,6 +114,8 @@ if __name__ == "__main__":
 
         if optimizer == 'PatchRS':
             algo = PatchRS(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s, fitness=fitness)
+        elif optimizer == 'CamoPatch':
+            algo = CamoPatch(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s, fitness=fitness)
         else:
             raise ValueError()
 
