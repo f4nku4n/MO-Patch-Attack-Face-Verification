@@ -1,10 +1,10 @@
+import cv2
 import math
 import torch
 import numpy as np
 from tqdm import tqdm
 from core import Individual
 
-from algorithm.PatchRS import render, mutate
 
 class CamoPatch:
     def __init__(self, max_query, img_h, img_w, patch_s, fitness, mut=0.3, temp=300, update_loc_period=4):
@@ -138,3 +138,37 @@ def sh_selection(n_queries, it):
     """ schedule to decrease the parameter p """
     t = max((float(n_queries - it) / n_queries - .0) ** 1., 0) * .75
     return t
+
+def render(x, h, w):
+    phenotype = np.ones((h, w, 3)) # load a white patch w*w
+    radius_avg = (phenotype.shape[0] + phenotype.shape[1]) / 2 / 6
+    for row in x:
+        overlay = phenotype.copy()
+        cv2.circle(
+            overlay,
+            center=(int(row[1] * h), int(row[0] * w)),
+            radius=int(row[2] * radius_avg),
+            color=(int(row[3] * 255), int(row[4] * 255), int(row[5] * 255)),
+            thickness=-1,
+        )
+        alpha = row[6]
+        phenotype = cv2.addWeighted(overlay, alpha, phenotype, 1 - alpha, 0)
+    return phenotype / 255.0
+
+def mutate(soln, mut=0.3):
+    new_specie = soln.copy()
+
+    # Randomization for Evolution
+    genes = soln.shape[0]
+    length = soln.shape[1]
+    y = np.random.randint(0, genes)
+    change = np.random.randint(0, length + 1)
+
+    selection = np.random.choice(length, size=change, replace=False)
+
+    if np.random.rand() < mut:
+        new_specie[y, selection] = np.random.rand(len(selection))
+    else:
+        new_specie[y, selection] += (np.random.rand(len(selection)) - 0.5) / 3
+        new_specie[y, selection] = np.clip(new_specie[y, selection], 0, 1)
+    return new_specie

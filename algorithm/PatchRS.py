@@ -1,46 +1,12 @@
-import cv2
 import torch
+import math
 import numpy as np
 from tqdm import tqdm
 
 from core import Individual
 
-def render(x, h, w):
-    phenotype = np.ones((h, w, 3)) # load a white patch w*w
-    radius_avg = (phenotype.shape[0] + phenotype.shape[1]) / 2 / 6
-    for row in x:
-        overlay = phenotype.copy()
-        cv2.circle(
-            overlay,
-            center=(int(row[1] * h), int(row[0] * w)),
-            radius=int(row[2] * radius_avg),
-            color=(int(row[3] * 255), int(row[4] * 255), int(row[5] * 255)),
-            thickness=-1,
-        )
-        alpha = row[6]
-        phenotype = cv2.addWeighted(overlay, alpha, phenotype, 1 - alpha, 0)
-    return phenotype / 255.0
-
-def mutate(soln, mut=0.3):
-    new_specie = soln.copy()
-
-    # Randomization for Evolution
-    genes = soln.shape[0]
-    length = soln.shape[1]
-    y = np.random.randint(0, genes)
-    change = np.random.randint(0, length + 1)
-
-    selection = np.random.choice(length, size=change, replace=False)
-
-    if np.random.rand() < mut:
-        new_specie[y, selection] = np.random.rand(len(selection))
-    else:
-        new_specie[y, selection] += (np.random.rand(len(selection)) - 0.5) / 3
-        new_specie[y, selection] = np.clip(new_specie[y, selection], 0, 1)
-    return new_specie
-
 class PatchRS:
-    def __init__(self, max_query, img_h, img_w, patch_s, fitness, p_init=0.4, update_loc_period=4):
+    def __init__(self, max_query, img_h, img_w, patch_s, fitness, p_init=0.8, update_loc_period=4):
         self.max_query = max_query
         self.img_h, self.img_w = img_h, img_w
         self.patch_s = patch_s
@@ -52,11 +18,8 @@ class PatchRS:
 
         self.p_init = p_init
 
-        self.N = 100
         self.update_loc_period = update_loc_period
         self.rescale_schedule = True
-
-        self.init_patches = 'random_squares'
 
     def p_selection(self, it):
         """ schedule to decrease the parameter p """
@@ -94,10 +57,23 @@ class PatchRS:
 
         return t
 
-    def get_init_patch(self, s):
-        patch_geno = np.random.rand(self.N, 7)  # Difference
-        patch = render(patch_geno, s, s)
-        return patch_geno, patch
+    @staticmethod
+    def random_choice(shape):
+        t = 2 * torch.rand(shape).to('cuda') - 1
+        return torch.sign(t)
+
+    @staticmethod
+    def random_int(low=0, high=1, shape=(1, )):
+        t = low + (high - low) * torch.rand(shape).to('cuda')
+        return t.long()
+
+    def get_init_patch(self, s, n_iter=1000):
+        patch_univ = torch.zeros([3, s, s]).to('cuda')
+        for _ in range(n_iter):
+            size_init = torch.randint(low=1, high=math.ceil(s ** .5), size=[1]).item()
+            loc_init = torch.randint(s - size_init + 1, size=[2])
+            patch_univ[:, loc_init[0]:loc_init[0] + size_init, loc_init[1]:loc_init[1] + size_init] = self.random_choice([3, 1, 1])
+        return patch_univ.clamp(0., 1.)
 
     def solve(self):
         found = False
@@ -110,13 +86,13 @@ class PatchRS:
         s = self.patch_s
 
         best_loc = [np.random.randint(0, H - s), np.random.randint(0, W - s)]
-        best_patch_geno, best_patch = self.get_init_patch(s)
+        best_patch = self.get_init_patch(s)
 
         loc_t = abs(self.update_loc_period)
         assert loc_t > 1
 
         best_idv = Individual(self.patch_s, (self.img_h, self.img_w))
-        best_idv.patch = torch.from_numpy(best_patch.copy()).permute(2, 0, 1).cuda()
+        best_idv.patch = best_patch.clone()
         best_idv.location = (best_loc[0], best_loc[0] + s, best_loc[1], best_loc[1] + s)
 
         self.fitness.evaluate([best_idv])
@@ -128,12 +104,20 @@ class PatchRS:
             found = True
             min_query = self.fitness.n_eval
         if not found:
+            # set when to start single channel updates
+            it = 0
+            for it in range(self.max_query):
+                s_it = int(max(self.p_selection(it) ** .5 * s, 1))
+                if s_it == 1:
+                    break
+            it_start_cu = it + (self.max_query - it) // 2
+
             for it in range(1, self.max_query):
                 s_it = int(max(self.p_selection(it) ** .5 * s, 1))
+                p_it = torch.randint(s - s_it + 1, size=[2])
 
                 ## Sample update
-                new_patch_geno = best_patch_geno.copy()
-                new_patch = best_patch.copy()
+                new_patch = best_patch.clone()
                 new_loc = best_loc.copy()
 
                 sh_it = int(max(self.sh_selection(it) * H, 0))
@@ -145,18 +129,31 @@ class PatchRS:
 
                 if update_patch:
                     # update patch
-                    if s_it > 1:
-                        new_patch_geno = mutate(best_patch_geno, mut=1.1)
+                    if it < it_start_cu:
+                        if s_it > 1:
+                            new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] += self.random_choice([3, 1, 1])
+                        else:
+                            old_clr = new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it].clone()
+                            new_clr = old_clr.clone()
+                            while (new_clr == old_clr).all().item():
+                                new_clr = self.random_choice([3, 1, 1]).clone().clamp(0., 1.)
+                            new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] = new_clr.clone()
                     else:
-                        new_patch_geno = mutate(best_patch_geno, mut=-0.1)
-                    new_patch = render(new_patch_geno, s, s)
+                        assert s_it == 1
+                        # single channel updates
+                        new_ch = self.random_int(low=0, high=3, shape=[1])
+                        new_patch[new_ch, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] = 1. - new_patch[
+                                                                                                 new_ch,
+                                                                                                 p_it[0]:p_it[0] + s_it,
+                                                                                                 p_it[1]:p_it[1] + s_it]
+                    new_patch.clamp_(0., 1.)
 
                 if update_loc:
                     new_loc[0] = np.clip(new_loc[0] + np.random.randint(-sh_it, sh_it + 1), 0, H - s)
                     new_loc[1] = np.clip(new_loc[1] + np.random.randint(-sw_it, sw_it + 1), 0, W - s)
 
                 new_idv = Individual(self.patch_s, (self.img_h, self.img_w))
-                new_idv.patch = torch.from_numpy(new_patch.copy()).permute(2, 0, 1).cuda()
+                new_idv.patch = new_patch.clone()
                 new_idv.location = (new_loc[0], new_loc[0] + s, new_loc[1], new_loc[1] + s)
                 self.fitness.evaluate([new_idv])
                 self.pbar.update(self.fitness.n_eval - self.prev_n_eval)
@@ -164,8 +161,7 @@ class PatchRS:
                 self.prev_n_eval = self.fitness.n_eval
 
                 if new_idv.adv_score > best_idv.adv_score:
-                    best_patch_geno = new_patch_geno.copy()
-                    best_patch = new_patch.copy()
+                    best_patch = new_patch.clone()
                     best_loc = new_loc.copy()
                     best_idv = new_idv
 
