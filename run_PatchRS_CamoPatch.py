@@ -4,7 +4,7 @@ import argparse
 import pickle as p
 
 from core import Fitness
-from algorithm import HiPA, IMS_HiPA
+from algorithm import PatchRS, CamoPatch
 
 from dataset import LFW
 from factory import get_model
@@ -17,25 +17,19 @@ from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_query', type=int, default=10000, help="Maximum number of evaluations")
-    parser.add_argument('--optimizer', type=str, default='IMS-HiPA', choices=['HiPA', 'IMS-HiPA'])
-
-    parser.add_argument('--n_warmup', type=int, default=1)
-    parser.add_argument('--variant1', action='store_true', help='continue with the next patch if successful')
-    parser.add_argument('--variant2', action='store_true', help='stop all other patches if successful')
-    parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
+    parser.add_argument('--optimizer', type=str, default='PatchRS', choices=['PatchRS', 'CamoPatch'])
 
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--victim_model_name', type=str, default='vggface',
                         choices=['vggface', 'webface', 'arcface', 'cosface'],
                         help='pretrained victim model')
     parser.add_argument('--n_tested_imgs', type=int, default=100, help="the number of tested images")
-    parser.add_argument('--b', type=int, help="the base value of IMS-HiPA", default=2)
 
     parser.add_argument('--img_dir', type=str, default='lfw_preprocess/lfw_crop_margin_5')
     parser.add_argument('--model_dir', type=str, default='./pretrained_model')
     parser.add_argument('--mask_dir', type=str, default='./mask')
     parser.add_argument('--exp_dir', type=str, default='./exp_results')
-    parser.add_argument('--setting', type=str, default='same', choices=['same','different'])
+    parser.add_argument('--setting', type=str, default='same', choices=['same', 'different'])
     return parser.parse_args()
 
 
@@ -44,27 +38,19 @@ if __name__ == "__main__":
     args = parse_args()
 
     optimizer = args.optimizer
+
     # Save configurations
     config = {
         'method': optimizer,
         'max_query': args.max_query,
-        'n_warmup': args.n_warmup,
-        'early_stop': args.early_stop,
         'seed': args.seed,
         'n_tested_imgs': args.n_tested_imgs,
         'victim_model': args.victim_model_name,
         'exp_dir': args.exp_dir,
         'setting': args.setting,
-        'b': args.b,
     }
 
     baseline = optimizer
-    if optimizer == 'IMS-HiPA':
-        config['b'] = args.b
-        config['variant1'] = args.variant1
-        config['variant2'] = args.variant2
-        baseline += f'_Variant1-{args.variant1}_Variant2-{args.variant2}'
-
     exp_dir = (f'{args.exp_dir}/{baseline}_'
                f'maxQuery-{args.max_query}_Setting-{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
 
@@ -98,9 +84,10 @@ if __name__ == "__main__":
 
     # Load data
     n_tested_imgs = args.n_tested_imgs
-    pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
-    # if victim_model_name != 'vggface':
-    #     pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
+    pair_path = './lfw_preprocess/pairs.txt'
+    if victim_model_name != 'vggface':
+        pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
+    # pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
     print('Load Data - Done!')
 
@@ -126,13 +113,12 @@ if __name__ == "__main__":
 
         best_psnr_success, best_ind_success = None, None
 
-        if optimizer == 'HiPA':
-            algo = HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s,
-                        fitness=fitness, n_warmup=args.n_warmup, early_stop=args.early_stop)
+        if optimizer == 'PatchRS':
+            algo = PatchRS(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s, fitness=fitness)
+        elif optimizer == 'CamoPatch':
+            algo = CamoPatch(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s, fitness=fitness)
         else:
-            algo = IMS_HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w,
-                            fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
-                            n_warmup=args.n_warmup, early_stop=args.early_stop)
+            raise ValueError()
 
         best_patch, best_patch_size, min_query = algo.solve()
         algo.pbar.close()
@@ -142,7 +128,6 @@ if __name__ == "__main__":
         adv_score, psnr_score = best_patch.adv_score.item(), best_patch.psnr_score.item()
         success_attack = (adv_score >= 0)
         success_list.append(success_attack)
-
 
         print(f"Adv Score: {adv_score:.4f}")
         print(f"PSNR Score: {psnr_score:.4f}")
@@ -165,9 +150,6 @@ if __name__ == "__main__":
             "adv_score": adv_score,
             "psnr_score": psnr_score,
             "min_query": min_query,
-            "list_adv_psnr_scores": algo.history,
-            "patch_before_refining": algo.patch_before_refining.patch.cpu().detach().numpy(),
-            "w": algo.w,
             "best_patch_size": best_patch_size
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))

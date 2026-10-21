@@ -89,9 +89,9 @@ if __name__ == "__main__":
     if args.init_cover_all:
         baseline += 'B'
     if args.terminated_condition == 'generation':
-        exp_dir = f'{exp_dir}/{baseline}_{args.fitness_type}_maxGen-{args.max_iter}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{baseline}_{args.fitness_type}_maxGen-{args.max_iter}_Setting-{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     else:
-        exp_dir = f'{exp_dir}/{baseline}_{args.fitness_type}_maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
+        exp_dir = f'{exp_dir}/{baseline}_{args.fitness_type}_maxQuery-{args.max_query}_Setting-{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}'
     os.makedirs(exp_dir, exist_ok=True)
 
     continue_exp = False
