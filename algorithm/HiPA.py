@@ -227,6 +227,8 @@ class HiPA:
 
     def _randomSearch(self, best_idv, min_query, found):
         n_candidates = self.max_query - self.fitness.n_eval - 20
+        start_id = self.fitness.n_eval
+
         loc = best_idv.location
         list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
         for idv in list_candidates:
@@ -241,10 +243,13 @@ class HiPA:
         self.prev_n_eval = self.fitness.n_eval
 
         for idv in list_candidates:
+            if idv.adv_score >= 0.0 and not found:
+                found = True
+                min_query = start_id
             if isBetter(best_idv, idv):
                 best_idv = idv
+            start_id += 1
 
-        found = best_idv.adv_score >= 0
         if not found:
             n_candidates = 20
             list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
@@ -254,8 +259,12 @@ class HiPA:
             self._log(list_candidates)
             self.prev_n_eval = self.fitness.n_eval
             for idv in list_candidates:
+                if idv.adv_score >= 0.0 and not found:
+                    found = True
+                    min_query = start_id
                 if isBetter(best_idv, idv):
                     best_idv = idv
+                start_id += 1
 
         return best_idv, min_query, found
 
