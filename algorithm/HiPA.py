@@ -169,9 +169,8 @@ class HiPA:
         return best_idv, best_patch
 
     ######################################## Step-2: Patch Content Optimization ########################################
-    def _hillClimbing(self, best_idv, best_patch):
+    def _hillClimbing(self, best_idv, best_patch, min_query, found):
         max_query = self.max_query
-        found = False
 
         it = 0
         for it in range(self.max_query):
@@ -214,6 +213,7 @@ class HiPA:
             if new_idv.adv_score >= 0 and not found:
                 found = True
                 max_query = self.max_query - 20
+                min_query = self.fitness.n_eval
 
             if new_idv.adv_score > best_idv.adv_score:
                 best_idv, best_patch = new_idv, new_patch
@@ -223,9 +223,9 @@ class HiPA:
 
             if self.early_stop and best_idv.adv_score >= 0:
                 break
-        return best_idv
+        return best_idv, min_query, found
 
-    def _randomSearch(self, best_idv):
+    def _randomSearch(self, best_idv, min_query, found):
         n_candidates = self.max_query - self.fitness.n_eval - 20
         loc = best_idv.location
         list_candidates = [Individual(self.patch_s, (self.img_h, self.img_w)) for _ in range(n_candidates)]
@@ -257,7 +257,7 @@ class HiPA:
                 if isBetter(best_idv, idv):
                     best_idv = idv
 
-        return best_idv
+        return best_idv, min_query, found
 
     ############################################ Step-3: Stealth Refinement ############################################
     def _refine(self, idv):
@@ -318,12 +318,9 @@ class HiPA:
 
         # Step 2: Hill Climbing
         if self.step2_random:
-            best_idv = self._randomSearch(best_idv)
+            best_idv, min_query, found = self._randomSearch(best_idv, min_query, found)
         else:
-            best_idv = self._hillClimbing(best_idv, best_patch)
-
-        if best_idv.adv_score >= 0 and not found:
-            min_query = self.fitness.n_eval
+            best_idv, min_query, found = self._hillClimbing(best_idv, best_patch, min_query, found)
 
         # Step 3: Stealth Refinement
         self.patch_before_refining = deepcopy(best_idv)
