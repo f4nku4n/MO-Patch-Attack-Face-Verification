@@ -30,6 +30,14 @@ class Individual:
         else:
             self.add_data[key] = value
 
+    def get(self, key):
+        if key in self.__dict__:
+            return self.__dict__[key]
+        else:
+            if key in self.add_data:
+                return self.add_data[key]
+            raise ValueError(f'Object does not have the {key} attribute')
+
     def _random_location(self):
         """
         Generates a random location (x_min, x_max, y_min, y_max) within image bounds.
