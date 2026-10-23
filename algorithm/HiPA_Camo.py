@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
@@ -8,7 +9,7 @@ from algorithm.CamoPatch import render, mutate
 
 
 class HiPA_Camo:
-    def __init__(self, max_query, img_h, img_w, patch_s, fitness, step1_random=False, step2_random=False, n_warmup=1, early_stop=False):
+    def __init__(self, max_query, img_h, img_w, patch_s, fitness, n_warmup=1, early_stop=False):
         self.max_query = max_query
         self.n_warmup = n_warmup
         self.img_h, self.img_w = img_h, img_w
@@ -17,7 +18,6 @@ class HiPA_Camo:
         self.fitness = fitness
         self.history = []
 
-        self.step1_random, self.step2_random = step1_random, step2_random
         self.early_stop = early_stop
         self.pbar = None
         self.prev_n_eval = 0
@@ -62,7 +62,7 @@ class HiPA_Camo:
             for idv in _X:
                 patch_geno = np.random.rand(100, 7)
                 idv.set('patch_geno', patch_geno.copy())
-                patch = render(patch_geno, s, s)
+                patch = torch.from_numpy(render(patch_geno, s, s).copy()).permute(2, 0, 1).cuda()
                 idv.patch = patch.clone()
                 idv.location = loc
             self.fitness.evaluate(_X)
@@ -101,7 +101,7 @@ class HiPA_Camo:
         s = self.patch_s
         while self.fitness.n_eval < max_query:
             new_patch_geno = mutate(best_patch_geno.copy(), 0.3)
-            new_patch = render(new_patch_geno, s, s)
+            new_patch = torch.from_numpy(render(new_patch_geno, s, s).copy()).permute(2, 0, 1).cuda()
 
             new_idv = deepcopy(best_idv)
             new_idv.set('patch_geno', new_patch_geno)
