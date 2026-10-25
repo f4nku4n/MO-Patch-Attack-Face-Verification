@@ -133,7 +133,7 @@ if __name__ == "__main__":
             algo = IMS_HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w,
                             fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
                             n_warmup=args.n_warmup, early_stop=args.early_stop)
-        elif optimizer == 'IMS-HiPA_selected':
+        else:
             algo = IMS_HiPA_selected(img_ref=img2, max_query=args.max_query, img_h=img_h, img_w=img_w,
                             fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
                             n_warmup=args.n_warmup, early_stop=args.early_stop)
