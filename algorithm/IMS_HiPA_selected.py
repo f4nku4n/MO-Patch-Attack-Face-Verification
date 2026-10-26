@@ -86,7 +86,8 @@ class IMS_HiPA_selected:
             for idv in _X:
                 idv.location = loc
                 the_best_patch = None
-                the_best_score = -2
+                the_best_adv_score = -2
+                the_best_psnr_score = 0
                 for l in list_locs:
                     x1, x2, y1, y2 = l
                     idv.patch = self.img_ref.crop((y1, x1, y2, x2))
@@ -94,11 +95,14 @@ class IMS_HiPA_selected:
                     self.fitness.evaluate([idv])
                     self._log()
                     self.prev_n_eval = self.fitness.n_eval
-                    if idv.adv_score.item() > the_best_score:
+                    if idv.adv_score.item() > the_best_adv_score:
                         the_best_patch = idv.patch
-                        the_best_score = idv.adv_score.item()
+                        the_best_adv_score = idv.adv_score.item()
+                        the_best_psnr_score = idv.psnr_score.item()
                 idv.patch = the_best_patch
-                self.fitness.evaluate([idv])
+                idv.adv_score = torch.tensor(the_best_adv_score)
+                idv.psnr_score = torch.tensor(the_best_psnr_score)
+                # self.fitness.evaluate([idv])
             # self.fitness.evaluate(_X)
             # self._log()
             # self.prev_n_eval = self.fitness.n_eval
@@ -182,7 +186,7 @@ class IMS_HiPA_selected:
         self.prev_n_eval = self.fitness.n_eval
         max_query = self.max_query - 20
         t = 1
-        patch_s = 8
+        patch_s = 20
         min_query = self.max_query
         found = False
         list_best_idv, list_best_patch = [], []
