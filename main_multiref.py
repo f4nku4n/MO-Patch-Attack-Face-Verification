@@ -127,7 +127,8 @@ def main():
               f'before refining {"fooled" if before["success_A"] else "not fooled"}) | '
               f'PSNR {best.psnr_score.item():.4f} | patch size {best_patch_size} | min query {min_query}')
 
-        save_image(adv_img, f'{img_dir_out}/{i}_Fooled-{final["n_success"]}of{len(ref_ids)}.png')
+        save_image(adv_img, f'{img_dir_out}/{i}_Fooled-{final["n_success"]}of{len(ref_ids)}'
+                            f'_A-{final["success_A"]}_PSNR-{best.psnr_score.item():.2f}.png')
         results = {
             'name': name, 'probe_id': probe_id, 'A_id': a_id, 'ref_ids': ref_ids, 'n_refs': len(ref_ids),
             'loc': best.location, 'patch': best.patch.cpu().numpy(),
