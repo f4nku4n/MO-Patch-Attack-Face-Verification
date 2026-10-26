@@ -4,7 +4,7 @@ import argparse
 import pickle as p
 
 from core import Fitness
-from algorithm import HiPA, IMS_HiPA
+from algorithm import HiPA, IMS_HiPA, IMS_HiPA_selected
 
 from dataset import LFW
 from factory import get_model
@@ -17,7 +17,7 @@ from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--max_query', type=int, default=10000, help="Maximum number of evaluations")
-    parser.add_argument('--optimizer', type=str, default='IMS-HiPA', choices=['HiPA', 'IMS-HiPA'])
+    parser.add_argument('--optimizer', type=str, default='IMS-HiPA', choices=['HiPA', 'IMS-HiPA', 'IMS-HiPA_selected'])
 
     parser.add_argument('--n_warmup', type=int, default=1)
     parser.add_argument('--variant1', action='store_true', help='continue with the next patch if successful')
@@ -59,11 +59,10 @@ if __name__ == "__main__":
     }
 
     baseline = optimizer
-    if optimizer == 'IMS-HiPA':
+    if optimizer != 'HiPA':
         config['b'] = args.b
         config['variant1'] = args.variant1
         config['variant2'] = args.variant2
-        baseline += f'_Variant1-{args.variant1}_Variant2-{args.variant2}'
 
     exp_dir = (f'{args.exp_dir}/{baseline}_Variant1-{args.variant1}_Variant2-{args.variant2}_'
                f'maxQuery-{args.max_query}_Setting{args.setting}_VictimModel-{args.victim_model_name}/Seed{args.seed}')
@@ -129,11 +128,14 @@ if __name__ == "__main__":
         if optimizer == 'HiPA':
             algo = HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w, patch_s=patch_s,
                         fitness=fitness, n_warmup=args.n_warmup, early_stop=args.early_stop)
-        else:
+        elif optimizer == 'IMS-HiPA':
             algo = IMS_HiPA(max_query=args.max_query, img_h=img_h, img_w=img_w,
                             fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
                             n_warmup=args.n_warmup, early_stop=args.early_stop)
-
+        else:
+            algo = IMS_HiPA_selected(img_ref=img2, max_query=args.max_query, img_h=img_h, img_w=img_w,
+                            fitness=fitness, b=args.b, variant1=args.variant1, variant2=args.variant2,
+                            n_warmup=args.n_warmup, early_stop=args.early_stop)
         best_patch, best_patch_size, min_query = algo.solve()
         algo.pbar.close()
         patch, loc = best_patch.patch, best_patch.location
