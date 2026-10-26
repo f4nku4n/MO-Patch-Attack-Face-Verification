@@ -56,57 +56,6 @@ class IMS_HiPA_selected:
         _patch[:, x_min: x_min + width, y_min: y_min + width] = color.unsqueeze(1).unsqueeze(2)
         return _patch
 
-    def p_selection(self, it):
-        """ schedule to decrease the parameter p """
-        it = int(it / self.max_query * 10000)
-        p_init = 0.8
-        if 10 < it <= 50:
-            p = p_init / 2
-        elif 50 < it <= 200:
-            p = p_init / 4
-        elif 200 < it <= 500:
-            p = p_init / 8
-        elif 500 < it <= 1000:
-            p = p_init / 16
-        elif 1000 < it <= 2000:
-            p = p_init / 32
-        elif 2000 < it <= 4000:
-            p = p_init / 64
-        elif 4000 < it <= 6000:
-            p = p_init / 128
-        elif 6000 < it <= 8000:
-            p = p_init / 256
-        elif 8000 < it:
-            p = p_init / 512
-        else:
-            p = p_init
-        return p
-
-    def sh_selection(self, it):
-        """ schedule to decrease the parameter p """
-        t = max((float(self.max_query - it) / self.max_query - .0) ** 1., 0) * .75
-        return t
-
-    @staticmethod
-    def random_choice(shape):
-        t = 2 * torch.rand(shape).to('cuda') - 1
-        return torch.sign(t)
-
-    @staticmethod
-    def random_int(low=0, high=1, shape=(1,)):
-        t = low + (high - low) * torch.rand(shape).to('cuda')
-        return t.long()
-
-    def get_init_patch(self, s, n_iter=1000):
-        patch_univ = torch.zeros([3, s, s]).to('cuda')
-        for _ in range(n_iter):
-            size_init = torch.randint(low=1, high=math.ceil(s ** .5), size=[1]).item()
-            loc_init = torch.randint(s - size_init + 1, size=[2])
-            patch_univ[
-                :, loc_init[0]:loc_init[0] + size_init, loc_init[1]:loc_init[1] + size_init] = self.random_choice(
-                [3, 1, 1])
-        return patch_univ.clamp(0., 1.)
-
     def update_history(self, idv, patch_s):
         if patch_s not in self.history:
             self.history[patch_s] = [[idv.adv_score.item(), idv.psnr_score.item()]]
@@ -170,61 +119,20 @@ class IMS_HiPA_selected:
         return best_idv, best_patch
 
     ######################################## Step-2: Patch Content Optimization ########################################
-    def _hillClimbing(self, best_idv, best_patch, patch_s, min_query, found):
-        max_query = self.max_query
+    def _hillClimbing(self, best_idv, best_patch, patch_s):
+        new_idv = deepcopy(best_idv)
+        new_patch = self._add_rectangle(best_patch, patch_s)
+        new_idv.patch = new_patch
 
-        it = 0
-        for it in range(self.max_query):
-            s_it = int(max(self.p_selection(it) ** .5 * patch_s, 1))
-            if s_it == 1:
-                break
-        it_start_cu = it + (self.max_query - it) // 2
+        self.fitness.evaluate([new_idv])
+        self._log()
+        self.prev_n_eval = self.fitness.n_eval
 
-        while self.fitness.n_eval < max_query:
-            s_it = int(max(self.p_selection(it) ** .5 * patch_s, 1))
-            p_it = torch.randint(patch_s - s_it + 1, size=[2])
+        if new_idv.adv_score > best_idv.adv_score:  # Focus on finding a strong adversarial patch
+            best_idv = new_idv
+            best_patch = new_patch
 
-            new_patch = best_patch.clone()
-            if it < it_start_cu:
-                if s_it > 1:
-                    new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] += self.random_choice([3, 1, 1])
-                else:
-                    old_clr = new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it].clone()
-                    new_clr = old_clr.clone()
-                    while (new_clr == old_clr).all().item():
-                        new_clr = self.random_choice([3, 1, 1]).clone().clamp(0., 1.)
-                    new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] = new_clr.clone()
-            else:
-                assert s_it == 1
-                # single channel updates
-                new_ch = self.random_int(low=0, high=3, shape=[1])
-                new_patch[new_ch, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] = 1. - new_patch[
-                                                                                         new_ch,
-                                                                                         p_it[0]:p_it[0] + s_it,
-                                                                                         p_it[1]:p_it[1] + s_it]
-            new_patch.clamp_(0., 1.)
-
-            new_idv = deepcopy(best_idv)
-            new_idv.patch = new_patch
-
-            self.fitness.evaluate([new_idv])
-            self._log()
-            self.prev_n_eval = self.fitness.n_eval
-
-            if new_idv.adv_score >= 0 and not found:
-                found = True
-                max_query = self.max_query - 20
-                min_query = self.fitness.n_eval
-
-            if new_idv.adv_score > best_idv.adv_score:
-                best_idv, best_patch = new_idv, new_patch
-
-            if new_idv.adv_score >= 0 and self.fitness.n_eval >= self.max_query - 20:
-                break
-
-            if self.early_stop and best_idv.adv_score >= 0:
-                break
-        return best_idv, best_patch, min_query, found
+        return best_idv, best_patch
 
     ############################################ Step-3: Stealth Refinement ############################################
     def _refine(self, idv):
@@ -272,8 +180,9 @@ class IMS_HiPA_selected:
     def solve(self):
         self.pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
         self.prev_n_eval = self.fitness.n_eval
+        max_query = self.max_query - 20
         t = 1
-        patch_s = 20
+        patch_s = 8
         min_query = self.max_query
         found = False
         list_best_idv, list_best_patch = [], []
@@ -296,8 +205,8 @@ class IMS_HiPA_selected:
             while i < len(list_best_idv):
                 if n_step % (self.b ** i) == 0:
                     patch_size = list_best_idv[i].patch_size
-                    list_best_idv[i], list_best_patch[i], min_query, found = self._hillClimbing(list_best_idv[i], list_best_patch[i],
-                                                                              patch_size, min_query, found)
+                    list_best_idv[i], list_best_patch[i] = self._hillClimbing(list_best_idv[i], list_best_patch[i],
+                                                                              patch_size)
                     self.update_history(list_best_idv[i], patch_size)
 
                     while i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score:
@@ -341,8 +250,8 @@ class IMS_HiPA_selected:
             while i < len(list_best_idv):
                 if n_step % (self.b ** i) == 0:
                     patch_size = list_best_idv[i].patch_size
-                    list_best_idv[i], list_best_patch[i], min_query, found = self._hillClimbing(list_best_idv[i], list_best_patch[i],
-                                                                              patch_size, min_query, found)
+                    list_best_idv[i], list_best_patch[i] = self._hillClimbing(list_best_idv[i], list_best_patch[i],
+                                                                              patch_size)
                     self.update_history(list_best_idv[i], patch_size)
                     while i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score:
                         del list_best_idv[i - 1]
@@ -362,7 +271,7 @@ class IMS_HiPA_selected:
         # variant2
         patch_size = list_best_idv[0].patch_size
         while self.variant2 and found and self.fitness.n_eval < max_query:
-            list_best_idv[0], list_best_patch[0], min_query, found = self._hillClimbing(list_best_idv[0], list_best_patch[0], patch_size, min_query, found)
+            list_best_idv[0], list_best_patch[0] = self._hillClimbing(list_best_idv[0], list_best_patch[0], patch_size)
             self.update_history(list_best_idv[0], patch_size)
 
         # step 3
@@ -370,4 +279,3 @@ class IMS_HiPA_selected:
         self.patch_before_refining = deepcopy(patch)
         patch = self._refine(patch)
         return patch, patch_size, min_query
-
