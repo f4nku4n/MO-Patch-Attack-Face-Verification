@@ -11,7 +11,7 @@ from utils.evolutionary_algorithms import isBetter
 
 class IMS_HiPA:
     def __init__(self, max_query, img_h, img_w, fitness, b, variant1=False, variant2=False, n_warmup=1,
-                 early_stop=False):
+                 early_stop=False, step2='rect', p_init=0.8):
         self.max_query = max_query
         self.n_warmup = n_warmup
         self.img_h, self.img_w = img_h, img_w
@@ -27,6 +27,14 @@ class IMS_HiPA:
         self.patch_before_refining = None
         self.w = 1.0
         self.b = b
+
+        # Step-2 patch content: 'rect' = original HiPA (_add_rectangle),
+        # 'patchrs' = PatchRS-style square updates (as in HiPA.py on branch bb_baselines)
+        assert step2 in ('rect', 'patchrs'), step2
+        self.step2 = step2
+        self.p_init = p_init
+        self.hc_it = {}         # patch_s -> number of hill-climbing steps done by that HiPA instance
+        self.it_start_cu = {}   # patch_s -> step at which single-channel updates start
 
     def _get_all_locations(self, patch_s):
         list_locs = []
@@ -91,6 +99,90 @@ class IMS_HiPA:
         new_patch = ori_patch * (1 - w) + patch * w
         return new_patch
 
+    ############################################ PatchRS-style patch content ###########################################
+    def p_selection(self, it):
+        """ schedule to decrease the parameter p (PatchRS / Square Attack) """
+        it = int(it / self.max_query * 10000)
+        p_init = self.p_init
+        if 10 < it <= 50:
+            p = p_init / 2
+        elif 50 < it <= 200:
+            p = p_init / 4
+        elif 200 < it <= 500:
+            p = p_init / 8
+        elif 500 < it <= 1000:
+            p = p_init / 16
+        elif 1000 < it <= 2000:
+            p = p_init / 32
+        elif 2000 < it <= 4000:
+            p = p_init / 64
+        elif 4000 < it <= 6000:
+            p = p_init / 128
+        elif 6000 < it <= 8000:
+            p = p_init / 256
+        elif 8000 < it:
+            p = p_init / 512
+        else:
+            p = p_init
+        return p
+
+    def _square_size(self, it, patch_s):
+        return int(max(self.p_selection(it) ** .5 * patch_s, 1))
+
+    def _get_it_start_cu(self, patch_s):
+        if patch_s not in self.it_start_cu:
+            it = 0
+            for it in range(self.max_query):
+                if self._square_size(it, patch_s) == 1:
+                    break
+            self.it_start_cu[patch_s] = it + (self.max_query - it) // 2
+        return self.it_start_cu[patch_s]
+
+    @staticmethod
+    def random_choice(shape):
+        t = 2 * torch.rand(shape).to('cuda') - 1
+        return torch.sign(t)
+
+    @staticmethod
+    def random_int(low=0, high=1, shape=(1, )):
+        t = low + (high - low) * torch.rand(shape).to('cuda')
+        return t.long()
+
+    def get_init_patch(self, s, n_iter=1000):
+        patch_univ = torch.zeros([3, s, s]).to('cuda')
+        for _ in range(n_iter):
+            size_init = torch.randint(low=1, high=math.ceil(s ** .5), size=[1]).item()
+            loc_init = torch.randint(s - size_init + 1, size=[2])
+            patch_univ[:, loc_init[0]:loc_init[0] + size_init, loc_init[1]:loc_init[1] + size_init] = \
+                self.random_choice([3, 1, 1])
+        return patch_univ.clamp(0., 1.)
+
+    def _patchrs_update(self, patch, patch_s):
+        """One PatchRS-style perturbation of the patch content. Each HiPA instance (patch size) keeps its own
+        step counter, so a HiPA created late in IMS still starts with large squares."""
+        it = self.hc_it.get(patch_s, 0)
+        self.hc_it[patch_s] = it + 1
+        it_start_cu = self._get_it_start_cu(patch_s)
+
+        s_it = self._square_size(it, patch_s)
+        p_it = torch.randint(patch_s - s_it + 1, size=[2])
+        new_patch = patch.clone()
+        if it < it_start_cu:
+            if s_it > 1:
+                new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] += self.random_choice([3, 1, 1])
+            else:
+                old_clr = new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it].clone()
+                new_clr = old_clr.clone()
+                while (new_clr == old_clr).all().item():
+                    new_clr = self.random_choice([3, 1, 1]).clone().clamp(0., 1.)
+                new_patch[:, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] = new_clr.clone()
+        else:
+            # single channel updates (s_it is 1 here)
+            new_ch = self.random_int(low=0, high=3, shape=[1])
+            new_patch[new_ch, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it] = \
+                1. - new_patch[new_ch, p_it[0]:p_it[0] + s_it, p_it[1]:p_it[1] + s_it]
+        return new_patch.clamp_(0., 1.)
+
     ######################################## Step-1: Promising Region Selection ########################################
     def _promising_region_selection(self, patch_s):
         list_locs = self._get_all_locations(patch_s)
@@ -101,6 +193,8 @@ class IMS_HiPA:
         for loc in list_locs:
             _X = [Individual(patch_s, (self.img_h, self.img_w)) for _ in range(self.n_warmup)]
             for idv in _X:
+                if self.step2 == 'patchrs':
+                    idv.patch = self.get_init_patch(patch_s)
                 idv.location = loc
             self.fitness.evaluate(_X)
             self._log()
@@ -130,7 +224,10 @@ class IMS_HiPA:
     ######################################## Step-2: Patch Content Optimization ########################################
     def _hillClimbing(self, best_idv, best_patch, patch_s):
         new_idv = deepcopy(best_idv)
-        new_patch = self._add_rectangle(best_patch, patch_s)
+        if self.step2 == 'patchrs':
+            new_patch = self._patchrs_update(best_patch, patch_s)
+        else:
+            new_patch = self._add_rectangle(best_patch, patch_s)
         new_idv.patch = new_patch
 
         self.fitness.evaluate([new_idv])

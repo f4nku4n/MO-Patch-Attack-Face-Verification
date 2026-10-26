@@ -21,6 +21,8 @@ def parse_args():
                     help='how to compare candidates over N references')
     pa.add_argument('--n_warmup', type=int, default=1)
     pa.add_argument('--b', type=int, default=2, help='base value of IMS-HiPA')
+    pa.add_argument('--step2', type=str, default='rect', choices=['rect', 'patchrs'],
+                    help="patch content of Step 2: 'rect' = original HiPA, 'patchrs' = PatchRS-style squares")
     pa.add_argument('--variant1', action='store_true')
     pa.add_argument('--variant2', action='store_true')
     pa.add_argument('--early_stop', action='store_true')
@@ -70,6 +72,8 @@ def stats(fitness, idv, ref_a_feat):
 def main():
     args = parse_args()
     v = f'_Variant1-{args.variant1}_Variant2-{args.variant2}'
+    if args.step2 != 'rect':                 # keep old folder names for the original runs
+        v = f'_Step2-{args.step2}' + v
     tag = f'_{args.tag}' if args.tag else ''
     exp_dir = (f'{args.exp_dir}/IMS-HiPA-MultiRef{tag}{v}_Agg-{args.agg}_maxQuery-{args.max_query}'
                f'_VictimModel-{args.victim_model_name}/Seed{args.seed}')
@@ -110,7 +114,7 @@ def main():
 
         algo = IMS_HiPA(max_query=args.max_query, img_h=size[0], img_w=size[1], fitness=fitness, b=args.b,
                         variant1=args.variant1, variant2=args.variant2, n_warmup=args.n_warmup,
-                        early_stop=args.early_stop)
+                        early_stop=args.early_stop, step2=args.step2)
         best, best_patch_size, min_query = algo.solve()
         algo.pbar.close()
 
