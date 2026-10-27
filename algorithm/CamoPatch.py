@@ -111,7 +111,7 @@ class CamoPatch:
                     if best_idv.adv_score < 0:
                         diff = new_idv.adv_score - best_idv.adv_score
                         curr_temp = self.temp / (it + 1)
-                        metropolis = math.exp(-diff / curr_temp)
+                        metropolis = math.exp(diff / curr_temp)
 
                         if new_idv.adv_score > best_idv.adv_score or np.random.rand() < metropolis:
                             best_loc = loc_new
@@ -148,12 +148,12 @@ def render(x, h, w):
             overlay,
             center=(int(row[1] * h), int(row[0] * w)),
             radius=int(row[2] * radius_avg),
-            color=(int(row[3] * 255), int(row[4] * 255), int(row[5] * 255)),
+            color=(row[3], row[4], row[5]),
             thickness=-1,
         )
         alpha = row[6]
         phenotype = cv2.addWeighted(overlay, alpha, phenotype, 1 - alpha, 0)
-    return phenotype / 255.0
+    return phenotype
 
 def mutate(soln, mut=0.3):
     new_specie = soln.copy()
