@@ -5,7 +5,7 @@ import numpy as np
 import pickle as p
 
 from core import Fitness, Population
-from algorithm import GA, NSGAII
+from algorithm import GA
 
 from dataset import LFW
 from factory import get_model
@@ -16,7 +16,7 @@ from torchvision.utils import save_image
 from utils.common import set_seed, NumpyEncoder, checkSameConfigs
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Genetic Algorithm for Image Patch Manipulation")
+    parser = argparse.ArgumentParser(description="Genetic Algorithm Patch Attack for Face Verification System")
     parser.add_argument('--baseline', type=str, default='GA', choices=['GA', 'GA_rules', 'NSGAII'])
     parser.add_argument('--crossover_type', type=str, default='Blended', choices=['UX', 'Blended'])
     parser.add_argument('--fitness_type', type=str, default='normal', choices=['normal', 'adaptive'],
@@ -35,10 +35,10 @@ def parse_args():
     parser.add_argument('--recons_w', type=float, default=0.5, help="Weight for reconstruction fitness")
     parser.add_argument('--tournament_size', type=int, default=4, help="Tournament size for selection")
 
-    parser.add_argument('--init_cover_all', action='store_true', help='The inital population covers all image')
+    parser.add_argument('--init_cover_all', action='store_true', help='The initial population covers all image')
     parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
 
-    parser.add_argument('--terminated_condition', type=str, default='generation')
+    parser.add_argument('--terminated_condition', type=str, default='query', choices=['generation', 'query'])
     parser.add_argument('--problem_type', type=str, default='maximizing', choices=['maximizing', 'minimizing'])
 
     parser.add_argument('--seed', type=int, default=42)
@@ -58,6 +58,25 @@ def parse_args():
 if __name__ == "__main__":
     # Parse arguments
     args = parse_args()
+
+    # Load pre-trained model for the face verification task
+    victim_model_name = args.victim_model_name
+    MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
+    print('Load Pre-trained model - Done!')
+    if victim_model_name in ['webface', 'vggface']:
+        threshold = 0.5
+        img_h, img_w = 160, 160
+        patch_s = 20
+    elif victim_model_name == 'cosface':
+        threshold = 0.30
+        img_h, img_w = 112, 112
+        patch_s = 14
+    elif victim_model_name == 'arcface':
+        threshold = 0.15
+        img_h, img_w = 112, 112
+        patch_s = 14
+    else:
+        raise ValueError
 
     # Save configurations
     config = {
@@ -80,6 +99,7 @@ if __name__ == "__main__":
         'seed': args.seed,
         'n_tested_imgs': args.n_tested_imgs,
         'victim_model': args.victim_model_name,
+        'threshold': threshold,
         'exp_dir': args.exp_dir,
         'setting': args.setting,
     }
@@ -109,20 +129,9 @@ if __name__ == "__main__":
     os.makedirs(exp_img_dir, exist_ok=True)
     os.makedirs(exp_log_dir, exist_ok=True)
 
-    # Load pre-trained model for the face verification task
-    victim_model_name = args.victim_model_name
-    if victim_model_name in ['vggface', 'webface']:
-        img_height, img_width = 160, 160
-    else:  # arcface, cosface
-        img_height, img_width = 112, 112
-    MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
-    print('Load Pre-trained model - Done!')
-
     # Load data
     n_tested_imgs = args.n_tested_imgs
     pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
-    # if victim_model_name != 'vggface':
-    #     pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
     print('Load Data - Done!')
 
@@ -136,16 +145,15 @@ if __name__ == "__main__":
         set_seed(random_seed)
 
         img1, img2, label = DATA[i]
-        img1, img2 = img1.resize((img_height, img_width)), img2.resize((img_height, img_width))
+        img1, img2 = img1.resize((img_h, img_w)), img2.resize((img_h, img_w))
         img1_torch, img2_torch = toTensor(img1), toTensor(img2)
 
-        population = Population(pop_size=args.pop_size, patch_size=args.patch_size, img_shape=(img_height, img_width),
+        population = Population(pop_size=args.pop_size, patch_size=args.patch_size, img_shape=(img_h, img_w),
                                 prob_mutate_location=args.prob_mutate_location,
                                 prob_mutate_patch=args.prob_mutate_patch, cover_all_image=args.init_cover_all)
 
-        fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
-                          recons_w=args.recons_w, attack_w=args.attack_w, fitness_type=args.fitness_type,
-                          multi_objective=(args.baseline == 'NSGAII'))
+        fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label, recons_w=args.recons_w,
+                          attack_w=args.attack_w, fitness_type=args.fitness_type, threshold=threshold)
 
         if not fitness.init_self_check():
             print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
@@ -158,12 +166,6 @@ if __name__ == "__main__":
                       population=population, fitness=fitness, tournament_size=args.tournament_size,
                       crossover_type=args.crossover_type, terminated_condition=args.terminated_condition,
                       problem_type=args.problem_type, early_stop=args.early_stop, using_rules=using_rules)
-
-        elif args.baseline == "NSGAII":
-            algo = NSGAII(max_iter=args.max_iter, max_query=args.max_query,
-                          population=population, fitness=fitness, crossover_type=args.crossover_type,
-                          terminated_condition=args.terminated_condition, problem_type=args.problem_type,
-                          early_stop=args.early_stop)
         else:
             # Give an error if the user inputs the wrong value for the 'baseline' hyperparameter
             raise ValueError

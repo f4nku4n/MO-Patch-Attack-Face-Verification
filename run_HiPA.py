@@ -20,8 +20,6 @@ def parse_args():
     parser.add_argument('--optimizer', type=str, default='HiPA', choices=['HiPA', 'HiPA_Camo'])
 
     parser.add_argument('--n_warmup', type=int, default=1)
-    parser.add_argument('--variant1', action='store_true', help='continue with the next patch if successful')
-    parser.add_argument('--variant2', action='store_true', help='stop all other patches if successful')
     parser.add_argument('--early_stop', action='store_true', help='Early stop if all individual are the same')
 
     parser.add_argument('--seed', type=int, default=42)
@@ -41,6 +39,25 @@ def parse_args():
 if __name__ == "__main__":
     # Parse arguments
     args = parse_args()
+
+    # Load pre-trained model for the face verification task
+    victim_model_name = args.victim_model_name
+    MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
+    print('Load Pre-trained model - Done!')
+    if victim_model_name in ['webface', 'vggface']:
+        threshold = 0.5
+        img_h, img_w = 160, 160
+        patch_s = 20
+    elif victim_model_name == 'cosface':
+        threshold = 0.30
+        img_h, img_w = 112, 112
+        patch_s = 14
+    elif victim_model_name == 'arcface':
+        threshold = 0.15
+        img_h, img_w = 112, 112
+        patch_s = 14
+    else:
+        raise ValueError
 
     optimizer = args.optimizer
     # Save configurations
@@ -78,23 +95,9 @@ if __name__ == "__main__":
     os.makedirs(exp_img_dir, exist_ok=True)
     os.makedirs(exp_log_dir, exist_ok=True)
 
-    # Load pre-trained model for the face verification task
-    victim_model_name = args.victim_model_name
-    if victim_model_name in ['vggface', 'webface']:
-        img_h, img_w = 160, 160
-        patch_s = 20
-    else:  # arcface, cosface
-        img_h, img_w = 112, 112
-        patch_s = 14
-    MODEL = get_model(model_name=victim_model_name, model_dir=args.model_dir)
-    print('Load Pre-trained model - Done!')
-
     # Load data
     n_tested_imgs = args.n_tested_imgs
-    pair_path = './lfw_preprocess/pairs.txt'
-    if victim_model_name != 'vggface':
-        pair_path = f'./lfw_preprocess/{n_tested_imgs}pairs_{victim_model_name}.txt'
-    # pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
+    pair_path = f'./lfw_preprocess/{args.setting}_seed_{args.seed}.txt'
     DATA = LFW(IMG_DIR=args.img_dir, MASK_DIR=args.mask_dir, PAIR_PATH=pair_path, transform=None)
     print('Load Data - Done!')
 
@@ -113,7 +116,7 @@ if __name__ == "__main__":
         img1_torch, img2_torch = toTensor(img1), toTensor(img2)
 
         fitness = Fitness(img1=img1_torch, img2=img2_torch, model=MODEL, label=label,
-                          recons_w=0.0, attack_w=0.0, fitness_type=None, multi_objective=False)
+                          recons_w=0.0, attack_w=0.0, fitness_type=None, threshold=threshold)
 
         if not fitness.init_self_check():
             print(f'Image #{i + 1}/{n_tested_imgs} - Model gives wrong prediction at initialization!')
