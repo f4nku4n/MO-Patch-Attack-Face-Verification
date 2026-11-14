@@ -130,32 +130,16 @@ class HiPA:
             self._log(_X)
             self.prev_n_eval = self.fitness.n_eval
 
-            idx_best = 0
-            for j in range(1, len(_X)):
-                if isBetter(_X[idx_best], _X[j]):
-                    idx_best = j
-            list_adv_scores = [idv.adv_score.item() for idv in _X]
-            results[loc] = np.mean(list_adv_scores)
-            X.append(_X[idx_best])
+        for idv in X:
+            loc = idv.location
+            results[loc] = idv.adv_score
+        results = dict(sorted(results.items(), key=lambda x: x[1], reverse=True))
+        list_sorted_locs = list(results.keys())
 
-        score_matrix = np.zeros((self.img_h // self.patch_s, self.img_h // self.patch_s))
-        for loc in list_locs:
-            i, j = loc[0] // self.patch_s, loc[2] // self.patch_s
-            score_matrix[i][j] = results[loc]
-
-        best_id = np.argwhere(score_matrix == np.max(score_matrix))[-1]
-        min_x = int(best_id[0] * self.patch_s)
-        max_x = min_x + self.patch_s
-        min_y = int(best_id[1] * self.patch_s)
-        max_y = min_y + self.patch_s
-        loc_best_id = (min_x, max_x, min_y, max_y)
-        # print(best_id, loc_best_id, np.max(score_matrix))
-
-        best_idv = X[loc2idx[loc_best_id]]
+        loc_best = list_sorted_locs[0]
+        best_idv = X[loc2idx[loc_best]]
         best_patch = best_idv.patch
 
-        # adv_score = np.max(score_matrix)
-        # print('CurrentScore:', adv_score, best_idv.adv_score)
         return best_idv, best_patch
 
     def _random_region(self):
