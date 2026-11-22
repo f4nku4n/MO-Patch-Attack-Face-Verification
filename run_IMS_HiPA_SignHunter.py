@@ -23,10 +23,8 @@ def parse_args():
 
     # IMS
     parser.add_argument('--b', type=int, default=2, help='base of IMS: attacker i makes 1 query every b^i iterations')
-    parser.add_argument('--patch_s0', type=int, default=8, help='first patch size')
-    parser.add_argument('--patch_ds', type=int, default=2, help='patch size increment between two attackers')
-    parser.add_argument('--max_patch_s', type=int, default=None, help='largest patch size allowed (default: no limit)')
     parser.add_argument('--variant1', action='store_true', help='keep adding patch sizes after the first success')
+    parser.add_argument('--variant2', action='store_true', help='after the first success, stop all other attackers')
 
     # SignHunter (same meaning as run_HiPA_SignHunter_Test.py)
     parser.add_argument('--eps', type=int, default=32, help='step size (x/255)')
@@ -82,8 +80,7 @@ if __name__ == "__main__":
     config.update({'method': 'IMS_HiPA_SignHunter', 'threshold': threshold})
 
     exp_dir = (f'{args.exp_dir}/IMS_HiPA_SignHunter_maxQuery-{args.max_query}_Setting-{args.setting}_'
-               f'VictimModel-{victim_model_name}_b-{args.b}_P0-{args.patch_s0}_dP-{args.patch_ds}_'
-               f'MaxP-{args.max_patch_s}_Variant1-{args.variant1}_Eps-{args.eps}_Init-{args.init}_'
+               f'VictimModel-{victim_model_name}_b-{args.b}_Variant1-{args.variant1}_Variant2-{args.variant2}_Eps-{args.eps}_Init-{args.init}_'
                f'MinBlock-{args.min_block}_EpsDecay-{args.eps_decay}/Seed{args.seed}')
     exp_img_dir, exp_log_dir = f"{exp_dir}/images", f"{exp_dir}/logs"
     os.makedirs(exp_img_dir, exist_ok=True)
@@ -115,8 +112,7 @@ if __name__ == "__main__":
             print(f'Image #{i} - Model gives wrong prediction at initialization!')
 
         algo = IMS_HiPA_SignHunter(max_query=args.max_query, img_h=img_h, img_w=img_w, fitness=fitness,
-                                   b=args.b, patch_s0=args.patch_s0, patch_ds=args.patch_ds,
-                                   max_patch_s=args.max_patch_s, variant1=args.variant1,
+                                   b=args.b, variant1=args.variant1, variant2=args.variant2,
                                    n_warmup=args.n_warmup, early_stop=args.early_stop,
                                    eps=args.eps / 255, init=args.init, min_block=args.min_block,
                                    split_channels=not args.no_split_channels, reuse_sign=not args.no_reuse_sign,
@@ -130,12 +126,12 @@ if __name__ == "__main__":
         adv_img = fitness.apply_patch_to_image(patch, loc)
         adv_score, psnr_score = best_patch.adv_score.item(), best_patch.psnr_score.item()
         success_attack = (adv_score >= 0)
-        summary = algo.summary()
+        # history[p] = 1 score after Step-1 + 1 score per Step-2 query of the HiPA with patch size p
+        step2_queries = {ps: len(h) - 1 for ps, h in algo.history.items()}
 
         print(f"Adv Score: {adv_score:.4f} | PSNR: {psnr_score:.4f} | Success: {success_attack} | "
               f"Min Query: {min_query} | Patch size: {best_patch_size} | Loc: {loc}")
-        print(f"Started sizes: {summary['started_sizes']} | Killed: {summary['killed_sizes']} | "
-              f"Alive (size, score, passes, steps, eps): {summary['alive']}")
+        print(f"Step-2 queries per patch size: {step2_queries}")
         print('-' * 20)
 
         save_image(adv_img, f"{exp_img_dir}/{i}_Success-{success_attack}_AdvScore-{adv_score:.2f}_"
@@ -152,7 +148,7 @@ if __name__ == "__main__":
             "list_adv_psnr_scores": algo.history,
             "patch_before_refining": algo.patch_before_refining.patch.cpu().detach().numpy(),
             "w": algo.w,
-            **summary,
+            "step2_queries": step2_queries,
         }
         p.dump(results, open(f'{exp_log_dir}/{i}.p', 'wb'))
 
