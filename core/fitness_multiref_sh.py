@@ -1,29 +1,12 @@
 import torch
 import torch.nn.functional as F
 
-AGGREGATIONS = ['lexi', 'min']
-
-
-def aggregate_multiref(adv_mat, agg):
-    """adv_mat: (B, N) -> (B,)"""
-    n = adv_mat.shape[1]
-    margin = adv_mat.min(dim=1).values
-    if agg == 'min':
-        return margin
-    if agg == 'lexi':
-        n_succ = (adv_mat >= 0).sum(dim=1).float()
-        deficit = adv_mat.clamp(max=0).sum(dim=1)
-        partial = n_succ + 1.0 / (1.0 - deficit) - (n + 1.0)
-        return torch.where(n_succ >= n, margin, partial)
-    raise ValueError(agg)
-
 
 class MultiRefFitnessSH:
-    def __init__(self, img1, ref_imgs, model, threshold, agg='lexi', batch_size=64):
+    def __init__(self, img1, ref_imgs, model, threshold, batch_size=64):
         self.model = model.eval()
         self.img1 = img1.cuda()
         self.threshold = threshold
-        self.agg = agg
         self.label = 0  # same identity -> dodging
         self.n_eval = 0
         with torch.no_grad():
@@ -58,13 +41,16 @@ class MultiRefFitnessSH:
     def evaluate(self, X):
         adv_imgs = torch.stack([self.apply_patch_to_image(idv.patch, idv.location) for idv in X])
         adv_mat = self.adv_matrix(adv_imgs)  # one forward pass per individual = one query each
-        scores = aggregate_multiref(adv_mat, self.agg)
         psnr = self.evaluate_psnr(adv_imgs)
         self.n_eval += len(X)
         for i, idv in enumerate(X):
-            idv.adv_vec = adv_mat[i]
-            idv.n_success = int((adv_mat[i] >= 0).sum())
+            vec = adv_mat[i]
+            idv.adv_vec = vec
+            idv.n_success = int((vec >= 0).sum())
             idv.success = idv.n_success == self.n_refs
-            idv.adv_score = scores[i]
+            idv.deficit = float(vec.clamp(max=0).sum())
+            idv.margin = float(vec.min())
+            idv.key = (idv.n_success, idv.deficit, idv.margin)
+            idv.adv_score = vec.min()
             idv.psnr_score = psnr[i]
-            idv.F = scores[i]
+            idv.F = idv.adv_score

@@ -10,7 +10,7 @@ from torchvision import transforms
 from torchvision.utils import save_image
 
 from algorithm.IMS_HiPA_SignHunter_MultiRef import IMS_HiPA_SignHunter_MultiRef
-from core.fitness_multiref_sh import MultiRefFitnessSH, AGGREGATIONS
+from core.fitness_multiref_sh import MultiRefFitnessSH
 from factory import get_model
 from utils.common import set_seed, NumpyEncoder
 
@@ -24,8 +24,6 @@ def parse_args():
     parser.add_argument('--max_query', type=int, default=10000, help="Maximum number of evaluations")
     parser.add_argument('--n_warmup', type=int, default=1)
     parser.add_argument('--early_stop', action='store_true')
-    parser.add_argument('--agg', type=str, default='lexi', choices=AGGREGATIONS,
-                        help='how the N reference scores are folded into one adv_score')
 
     # IMS
     parser.add_argument('--b', type=int, default=2, help='base of IMS: attacker i makes 1 query every b^i iterations')
@@ -128,7 +126,7 @@ if __name__ == "__main__":
     config.update({'method': 'IMS_HiPA_SignHunter_MultiRef', 'threshold': threshold})
 
     tag = f'_{args.tag}' if args.tag else ''
-    exp_dir = (f'{args.exp_dir}/IMS_HiPA_SignHunter_MultiRef{tag}_Agg-{args.agg}_maxQuery-{args.max_query}_'
+    exp_dir = (f'{args.exp_dir}/IMS_HiPA_SignHunter_MultiRef{tag}_maxQuery-{args.max_query}_'
                f'VictimModel-{victim_model_name}_Thr-{threshold}_b-{args.b}_Variant1-{args.variant1}_'
                f'Variant2-{args.variant2}_Eps-{args.eps}_Init-{args.init}_MinBlock-{args.min_block}_'
                f'EpsDecay-{args.eps_decay}/Seed{args.seed}')
@@ -141,7 +139,7 @@ if __name__ == "__main__":
     toTensor = transforms.ToTensor()
     pairs = read_multiref(os.path.join(args.list_dir, f'multiref_same_seed_{args.seed}.txt'))
     n_pairs = min(args.n_tested_imgs, len(pairs))
-    print(f'Loaded {n_pairs} pairs | agg = {args.agg} | threshold = {threshold}')
+    print(f'Loaded {n_pairs} pairs | threshold = {threshold}')
 
     for i in range(n_pairs):
         if os.path.isfile(f'{exp_log_dir}/{i}.p'):  # resume
@@ -159,7 +157,7 @@ if __name__ == "__main__":
         refs = [load_img(args.img_dir, name, r, (img_h, img_w), toTensor) for r in ref_ids]
         ref_a = load_img(args.img_dir, name, a_id, (img_h, img_w), toTensor)
 
-        fitness = MultiRefFitnessSH(img1=probe, ref_imgs=refs, model=MODEL, threshold=threshold, agg=args.agg)
+        fitness = MultiRefFitnessSH(img1=probe, ref_imgs=refs, model=MODEL, threshold=threshold)
         with torch.no_grad():
             ref_a_feat = torch.nn.functional.normalize(MODEL(ref_a.unsqueeze(0).cuda()), dim=1)
         if not fitness.init_self_check():
@@ -193,10 +191,10 @@ if __name__ == "__main__":
             'name': name, 'probe_id': probe_id, 'A_id': a_id, 'ref_ids': ref_ids, 'n_refs': len(ref_ids),
             'loc': best.location, 'patch': best.patch.cpu().numpy(),
             'patch_before_refining': algo.patch_before_refining.patch.cpu().numpy(),
-            'cls_img': probe.numpy(), 'adv_img': adv_img.cpu().num py(),
+            'cls_img': probe.numpy(), 'adv_img': adv_img.cpu().numpy(),
             'adv_score': best.adv_score.item(), 'psnr_score': best.psnr_score.item(),
             'min_query': min_query, 'best_patch_size': best_patch_size,
-            'w': algo.w, 'agg': args.agg, 'threshold': threshold,
+            'w': algo.w, 'threshold': threshold,
             'list_adv_psnr_scores': algo.history, 'step2_queries': step2_queries,
             **final,
             **{f'{k}_before_refining': v for k, v in before.items()},
