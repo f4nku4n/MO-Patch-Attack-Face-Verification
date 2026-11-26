@@ -1,0 +1,436 @@
+import math
+import random
+from copy import deepcopy
+from functools import partial
+
+import numpy as np
+import torch
+from PIL import Image
+from torchvision import transforms
+from tqdm import tqdm
+
+from core import Individual
+from utils.evolutionary_algorithms import isBetter
+from algorithm.HiPA_SignHunter_Test import SignHunterOptimizer
+
+
+class SteppableSignHunter(SignHunterOptimizer):
+    def _eval_g(self, x):
+        f = self._eval(x)
+        yield
+        return f
+
+    def _refresh_cur_g(self):
+        self.x_cur = self._make(self.sgn)
+        if torch.equal(self.x_cur, self.x_base):
+            self.f_cur = self.f_base
+        else:
+            self.f_cur = yield from self._eval_g(self.x_cur)
+
+    def _hunt_g(self):
+        for level in self.levels:
+            order = (
+                torch.randperm(len(level)).tolist()
+                if self.shuffle
+                else range(len(level))
+            )
+            for idx in order:
+                g = level[idx]
+                self._flip(g)
+                x_new = self._make(self.sgn)
+
+                if torch.equal(x_new, self.x_cur):
+                    self._flip(g)
+                    continue
+
+                f_new = yield from self._eval_g(x_new)
+                if f_new > self.f_cur:
+                    self.x_cur, self.f_cur = x_new, f_new
+                else:
+                    self._flip(g)
+
+    def _step_g(self):
+        moved = False
+        while self.f_cur > self.f_base:
+            self.x_base, self.f_base = self.x_cur, self.f_cur
+            self.n_steps += 1
+            moved = True
+
+            self.x_cur = self._make(self.sgn)
+            if torch.equal(self.x_cur, self.x_base):
+                self.f_cur = self.f_base
+                break
+
+            self.f_cur = yield from self._eval_g(self.x_cur)
+            if not self.reuse_sign:
+                break
+        return moved
+
+    def run_steps(self):
+        self.f_base = yield from self._eval_g(self.x_base)
+        yield from self._refresh_cur_g()
+
+        while True:
+            yield from self._hunt_g()
+            self.n_passes += 1
+            moved = yield from self._step_g()
+
+            if not moved and self.eps_decay is not None and self.eps > self.eps_min:
+                self.eps = max(self.eps * self.eps_decay, self.eps_min)
+                yield from self._refresh_cur_g()
+
+
+class IMS_HiPA_SignHunter_Selected:
+    def __init__(self, img_ref, max_query, img_h, img_w, fitness, b, variant1=False, variant2=False, n_warmup=1, early_stop=False, eps=32 / 255, init="step1", min_block=2, split_channels=True, reuse_sign=True, shuffle=True, eps_decay=0.5, eps_min=1 / 255, init_patch_size=20,):
+        self.img_ref = img_ref.convert("RGB")
+        self.max_query = max_query
+        self.n_warmup = n_warmup
+        self.img_h, self.img_w = img_h, img_w
+        self.fitness = fitness
+        self.history = {}
+
+        self.variant1, self.variant2 = variant1, variant2
+        self.early_stop = early_stop
+        self.pbar = None
+        self.prev_n_eval = 0
+
+        self.patch_before_refining = None
+        self.w = 1.0
+        self.b = b
+        self.init_patch_size = init_patch_size
+
+        # Original SignHunter (Step 2).
+        self.init = init  # 'clean' | 'step1' | 'gray'
+        self.sh_kwargs = dict(eps=eps, min_block=min_block, split_channels=split_channels, reuse_sign=reuse_sign,
+                              shuffle=shuffle, eps_decay=eps_decay, eps_min=eps_min)
+        self.sh = {}
+        self.to_tensor = transforms.ToTensor()
+
+    def _device(self):
+        return self.fitness.img1.device
+
+    def _get_all_locations(self, patch_s):
+        list_locs = []
+        for i in range(0, self.img_h, patch_s):
+            if i + patch_s > self.img_h:
+                i = self.img_h - patch_s
+            for j in range(0, self.img_w, patch_s):
+                if j + patch_s > self.img_w:
+                    j = self.img_w - patch_s
+                loc = (i, i + patch_s, j, j + patch_s)
+                if loc not in list_locs:
+                    list_locs.append(loc)
+        return list_locs
+
+    @staticmethod
+    def _add_rectangle(patch, patch_size):
+        _patch = patch.clone()
+        x_min = random.randint(0, patch_size - 1)
+        y_min = random.randint(0, patch_size - 1)
+        width = random.randint(math.ceil(patch_size * 0.18), max(math.ceil(patch_size * 0.18), math.floor(patch_size * 0.36)),)
+        color = torch.rand(3, device=patch.device, dtype=patch.dtype)
+        x_end = min(x_min + width, patch_size)
+        y_end = min(y_min + width, patch_size)
+        _patch[:, x_min:x_end, y_min:y_end] = color[:, None, None]
+        return _patch
+
+    def update_history(self, idv, patch_s):
+        item = [idv.adv_score.item(), idv.psnr_score.item()]
+        self.history.setdefault(patch_s, []).append(item)
+
+    def _log(self):
+        if self.pbar is not None:
+            delta = self.fitness.n_eval - self.prev_n_eval
+            if delta > 0:
+                self.pbar.update(delta)
+            self.pbar.set_postfix(query=self.fitness.n_eval)
+
+    @staticmethod
+    def _adjust_patch_with_weight(cls_img, patch, loc, w):
+        ori_patch = cls_img[:, loc[0]:loc[1], loc[2]:loc[3]].clone()
+        return ori_patch * (1 - w) + patch * w
+
+    ######################################## Step-1: Promising Region Selection ########################################
+    def _promising_region_selection(self, patch_s):
+        list_locs = self._get_all_locations(patch_s)
+        # expected_queries = len(list_locs) ** 2 * self.n_warmup
+        # remaining = self.max_query - self.fitness.n_eval
+        # if expected_queries > remaining:
+        #     raise RuntimeError(
+        #         "Insufficient query budget for selected Step 1: "
+        #         f"need {expected_queries}, remaining {remaining}."
+        #     )
+
+        location_scores = {}
+        best_individual_per_location = []
+        device = self._device()
+
+        for target_loc in list_locs:
+            warmup_individuals = [
+                Individual(patch_s, (self.img_h, self.img_w))
+                for _ in range(self.n_warmup)
+            ]
+
+            for idv in warmup_individuals:
+                idv.location = target_loc
+                best_source_patch = None
+                best_adv_score = -float("inf")
+                best_psnr_score = None
+
+                for source_loc in list_locs:
+                    x1, x2, y1, y2 = source_loc
+                    source_crop = self.img_ref.crop((y1, x1, y2, x2))
+                    candidate_patch = self.to_tensor(source_crop).to(device=device)
+                    idv.patch = candidate_patch
+
+                    self.fitness.evaluate([idv])
+                    self._log()
+                    self.prev_n_eval = self.fitness.n_eval
+
+                    score = float(idv.adv_score.item())
+                    if score > best_adv_score:
+                        best_source_patch = candidate_patch.detach().clone()
+                        best_adv_score = score
+                        best_psnr_score = float(idv.psnr_score.item())
+
+                idv.patch = best_source_patch
+                idv.adv_score = torch.tensor(best_adv_score, device=device)
+                idv.psnr_score = torch.tensor(best_psnr_score, device=device)
+
+            idx_best = 0
+            for j in range(1, len(warmup_individuals)):
+                if isBetter(warmup_individuals[idx_best], warmup_individuals[j]):
+                    idx_best = j
+
+            location_scores[target_loc] = float(np.mean([x.adv_score.item() for x in warmup_individuals]))
+            best_individual_per_location.append(warmup_individuals[idx_best])
+
+        best_location_idx = max(range(len(list_locs)), key=lambda idx: location_scores[list_locs[idx]])
+        best_idv = best_individual_per_location[best_location_idx]
+        return best_idv, best_idv.patch
+
+    ######################################## Step-2: Patch Content Optimization ########################################
+    def _hillClimbing(self, best_idv, best_patch, patch_s):
+        new_idv = deepcopy(best_idv)
+        new_patch = self._add_rectangle(best_patch, patch_s)
+        new_idv.patch = new_patch
+
+        self.fitness.evaluate([new_idv])
+        self._log()
+        self.prev_n_eval = self.fitness.n_eval
+
+        if new_idv.adv_score > best_idv.adv_score:
+            best_idv, best_patch = new_idv, new_patch
+        return best_idv, best_patch
+
+    def _init_content(self, idv):
+        loc = idv.location
+        if self.init == "clean":
+            return self.fitness.img1[:, loc[0]:loc[1], loc[2]:loc[3]].clone()
+        if self.init == "gray":
+            return torch.full_like(idv.patch, 0.5)
+        # 'step1': initialize SignHunter with the patch selected in Step 1.
+        return idv.patch.clone()
+
+    def _sh_query(self, patch_s, patch):
+        state = self.sh[patch_s]
+        new_idv = deepcopy(state["idv"])
+        new_idv.patch = patch.clone()
+
+        self.fitness.evaluate([new_idv])
+        self._log()
+        self.prev_n_eval = self.fitness.n_eval
+
+        if new_idv.adv_score > state["idv"].adv_score:
+            state["idv"] = new_idv
+        return new_idv.adv_score.item()
+
+    def _signHunter(self, best_idv, best_patch, patch_s):
+        if patch_s not in self.sh:
+            opt = SteppableSignHunter(
+                self._init_content(best_idv),
+                partial(self._sh_query, patch_s),
+                budget=math.inf,
+                **self.sh_kwargs,
+            )
+            self.sh[patch_s] = {
+                "opt": opt,
+                "gen": opt.run_steps(),
+                "idv": best_idv,
+            }
+
+        # One generator step performs at most one model query.
+        if self.fitness.n_eval < self.max_query:
+            try:
+                next(self.sh[patch_s]["gen"])
+            except StopIteration:
+                pass
+
+        best_idv = self.sh[patch_s]["idv"]
+        return best_idv, best_idv.patch
+
+    ############################################ Step-3: Stealth Refinement ############################################
+    def _refine(self, idv):
+        if self.fitness.n_eval >= self.max_query:
+            return idv
+
+        new_w = 0.1
+        best_idv = idv
+
+        while new_w < self.w and self.fitness.n_eval < self.max_query:
+            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
+            new_idv = deepcopy(idv)
+            new_idv.patch = new_patch
+
+            self.fitness.evaluate([new_idv])
+            self._log()
+            self.prev_n_eval = self.fitness.n_eval
+
+            if (new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score):
+                best_idv = new_idv
+                break
+            new_w = round(new_w + 0.1, 1)
+
+        self.w = new_w
+        new_w = round(self.w - 0.1 + 0.01, 2)
+
+        while new_w < self.w and self.fitness.n_eval < self.max_query:
+            new_patch = self._adjust_patch_with_weight(self.fitness.img1, idv.patch, idv.location, new_w)
+            new_idv = deepcopy(idv)
+            new_idv.patch = new_patch
+
+            self.fitness.evaluate([new_idv])
+            self._log()
+            self.prev_n_eval = self.fitness.n_eval
+
+            if (new_idv.adv_score >= 0 and new_idv.psnr_score > best_idv.psnr_score):
+                best_idv = new_idv
+                self.w = new_w
+                break
+            new_w = round(new_w + 0.01, 2)
+
+        return best_idv
+
+    #main
+    def solve(self):
+        if self.fitness.n_eval >= self.max_query:
+            raise RuntimeError("Query budget has already been exhausted.")
+
+        self.pbar = tqdm(total=self.max_query, initial=self.fitness.n_eval)
+        self.prev_n_eval = self.fitness.n_eval
+
+        patch_s = self.init_patch_size
+        min_query = self.max_query
+        found = False
+        list_best_idv, list_best_patch = [], []
+        cannot_add_new_patch = False
+        max_query = self.max_query - 20
+
+        first_cost = len(self._get_all_locations(patch_s)) ** 2 * self.n_warmup
+        if first_cost > max_query - self.fitness.n_eval:
+            self.pbar.close()
+            raise RuntimeError(
+                f"Initial patch size {patch_s} needs {first_cost} queries, "
+                f"but only {max_query - self.fitness.n_eval} are available. "
+                "Increase init_patch_size or max_query."
+            )
+
+        idv, patch = self._promising_region_selection(patch_s)
+        if idv.adv_score >= 0:
+            found = True
+            min_query = self.fitness.n_eval
+        list_best_idv.append(idv)
+        list_best_patch.append(patch)
+        self.update_history(idv, patch_s)
+
+        n_step = 1
+        t = 1
+
+        # IMS initialization stage (variant1).
+        while (self.variant1 or not found) and self.fitness.n_eval < max_query:
+            n_step += 1
+            i = 0
+
+            while i < len(list_best_idv):
+                if n_step % (self.b ** i) == 0:
+                    patch_size = list_best_idv[i].patch_size
+                    list_best_idv[i], list_best_patch[i] = self._signHunter(list_best_idv[i], list_best_patch[i], patch_size)
+                    self.update_history(list_best_idv[i], patch_size)
+
+                    while (i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score):
+                        del list_best_idv[i - 1]
+                        del list_best_patch[i - 1]
+                        i -= 1
+
+                    if list_best_idv[i].adv_score >= 0:
+                        if not found:
+                            min_query = self.fitness.n_eval
+                        found = True
+                        if not self.variant1:
+                            break
+
+                i += 1
+                if self.fitness.n_eval >= max_query:
+                    break
+
+            if (self.variant1 or not found) and n_step == self.b ** t:
+                patch_s += 2
+                locations = self._get_all_locations(patch_s)
+                query_cost = len(locations) ** 2 * self.n_warmup
+
+                if query_cost > max_query - self.fitness.n_eval:
+                    cannot_add_new_patch = True
+                    break
+
+                idv, patch = self._promising_region_selection(patch_s)
+                self.update_history(idv, patch_s)
+                list_best_idv.append(idv)
+                list_best_patch.append(patch)
+
+                if idv.adv_score >= 0:
+                    if not found:
+                        min_query = self.fitness.n_eval
+                    found = True
+                t += 1
+
+        # Main IMS stage.
+        while ((not self.variant2 or cannot_add_new_patch) and self.fitness.n_eval < max_query):
+            n_step += 1
+            i = 0
+
+            while i < len(list_best_idv):
+                if n_step % (self.b ** i) == 0:
+                    patch_size = list_best_idv[i].patch_size
+                    list_best_idv[i], list_best_patch[i] = self._signHunter(list_best_idv[i], list_best_patch[i], patch_size)
+                    self.update_history(list_best_idv[i], patch_size)
+
+                    while (i > 0 and list_best_idv[i].adv_score > list_best_idv[i - 1].adv_score):
+                        del list_best_idv[i - 1]
+                        del list_best_patch[i - 1]
+                        i -= 1
+
+                    if list_best_idv[i].adv_score >= 0:
+                        if not found:
+                            min_query = self.fitness.n_eval
+                        found = True
+                        if self.variant2:
+                            cannot_add_new_patch = False
+                            break
+
+                i += 1
+                if self.fitness.n_eval >= max_query:
+                    break
+
+        # variant2
+        patch_size = list_best_idv[0].patch_size
+        while self.variant2 and found and self.fitness.n_eval < max_query:
+            list_best_idv[0], list_best_patch[0] = self._signHunter(list_best_idv[0], list_best_patch[0], patch_size)
+            self.update_history(list_best_idv[0], patch_size)
+
+        # Step 3: stealth refinement.
+        best_idv = list_best_idv[0]
+        self.patch_before_refining = deepcopy(best_idv)
+        best_idv = self._refine(best_idv)
+
+        self.pbar.close()
+        return best_idv, patch_size, min_query
